@@ -1,0 +1,6 @@
+{
+  "name": "Qodex",
+  "description": "Modern QR Code Generator Micro SaaS with a localized, usage-based credit wallet system.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
