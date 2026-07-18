@@ -22,7 +22,21 @@ import {
   Play,
   CheckCircle,
   ChevronRight,
-  UserCheck
+  UserCheck,
+  Users,
+  Search,
+  Filter,
+  Download,
+  Bell,
+  Sliders,
+  Volume2,
+  FileText,
+  Briefcase,
+  TrendingUp,
+  CreditCard,
+  Percent,
+  CheckSquare,
+  Globe
 } from 'lucide-react';
 
 interface AdminConsoleProps {
@@ -33,6 +47,14 @@ interface AdminConsoleProps {
   showToast: (message: string, type: 'success' | 'info' | 'error') => void;
   credits?: number;
   setCredits?: React.Dispatch<React.SetStateAction<number>>;
+  workspaces?: any[];
+  setWorkspaces?: React.Dispatch<React.SetStateAction<any[]>>;
+  currentUser?: any;
+  setCurrentUser?: React.Dispatch<React.SetStateAction<any>>;
+  announcement?: string | null;
+  setAnnouncement?: (ann: string | null) => void;
+  campaigns?: any[];
+  setCampaigns?: React.Dispatch<React.SetStateAction<any[]>>;
   onAddTransaction?: (desc: string, ref: string, amount: string, change: string) => void;
 }
 
@@ -158,195 +180,43 @@ CREATE POLICY "Workspace members can read/write folders" ON folders
   },
   {
     name: 'qr_folders',
-    description: 'Many-to-many relationship mapping QR codes to specific folders.',
+    description: 'Many-to-many relationship mapping QR codes to specific Folders.',
     ddl: `CREATE TABLE qr_folders (
   qr_id UUID REFERENCES qr_codes(id) ON DELETE CASCADE,
   folder_id UUID REFERENCES folders(id) ON DELETE CASCADE,
   PRIMARY KEY (qr_id, folder_id)
 );`,
-    rls: `-- Shared team validation link logic
+    rls: `-- Cascaded policy checks workspace membership via the folders mapping
 ALTER TABLE qr_folders ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Workspace team can manage QR folder links" ON qr_folders
+CREATE POLICY "Workspace members can associate QR codes with folders" ON qr_folders
   USING (
     EXISTS (
       SELECT 1 FROM folders
-      JOIN workspace_members ON workspace_members.workspace_id = folders.workspace_id
       WHERE folders.id = qr_folders.folder_id
-      AND workspace_members.user_id = auth.uid()
-    )
-  );`
-  },
-  {
-    name: 'wallets',
-    description: 'Atomic pay-as-you-go token ledger containing current balances.',
-    ddl: `CREATE TABLE wallets (
-  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE PRIMARY KEY,
-  balance INTEGER NOT NULL DEFAULT 15 CHECK (balance >= 0),
-  total_purchased INTEGER NOT NULL DEFAULT 0,
-  total_used INTEGER NOT NULL DEFAULT 0,
-  updated_at TIMESTAMPTZ DEFAULT clock_timestamp()
-);`,
-    rls: `-- Strictly user-level reads; updates managed securely via transactions
-ALTER TABLE wallets ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Read own wallet balance" ON wallets
-  FOR SELECT USING (auth.uid() = user_id);`
-  },
-  {
-    name: 'wallet_transactions',
-    description: 'Complete audit logs of every credit debit and credit purchase.',
-    ddl: `CREATE TABLE wallet_transactions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-  type TEXT NOT NULL CHECK (type IN ('purchase', 'usage', 'refund', 'bonus', 'expiration', 'manual')),
-  amount INTEGER NOT NULL, -- Negative for depletions, positive for grants
-  expires_at TIMESTAMPTZ, -- Nullable expiration for bonus credits
-  created_at TIMESTAMPTZ DEFAULT clock_timestamp()
-);`,
-    rls: `-- Audit readability for users
-ALTER TABLE wallet_transactions ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "View own transaction logs" ON wallet_transactions
-  FOR SELECT USING (auth.uid() = user_id);`
-  },
-  {
-    name: 'credit_packages',
-    description: 'Packages catalog table available for funding purchase.',
-    ddl: `CREATE TABLE credit_packages (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  credits INTEGER NOT NULL,
-  price_ngn INTEGER NOT NULL,
-  price_kes INTEGER NOT NULL,
-  price_usd NUMERIC(6,2) NOT NULL,
-  badge TEXT,
-  is_enabled BOOLEAN DEFAULT true
-);`,
-    rls: `-- Public read, admin write
-ALTER TABLE credit_packages ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Public can view active store packages" ON credit_packages
-  FOR SELECT USING (is_enabled = true);`
-  },
-  {
-    name: 'feature_pricing',
-    description: 'Pay-as-you-go credit price rate list per premium capability.',
-    ddl: `CREATE TABLE feature_pricing (
-  id TEXT PRIMARY KEY,
-  feature_name TEXT NOT NULL,
-  credits_cost INTEGER NOT NULL,
-  description TEXT
-);`,
-    rls: `-- Public read, admin write
-ALTER TABLE feature_pricing ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Everyone can read feature token cost list" ON feature_pricing
-  FOR SELECT USING (true);`
-  },
-  {
-    name: 'payments',
-    description: 'Transaction invoice tracking table.',
-    ddl: `CREATE TABLE payments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-  package_id TEXT REFERENCES credit_packages(id),
-  amount NUMERIC(10,2) NOT NULL,
-  currency TEXT NOT NULL,
-  status TEXT NOT NULL, -- 'pending', 'successful', 'failed'
-  reference TEXT UNIQUE NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT clock_timestamp()
-);`,
-    rls: `-- User readability, secure updates
-ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "View own invoice records" ON payments
-  FOR SELECT USING (auth.uid() = user_id);`
-  },
-  {
-    name: 'payment_webhooks',
-    description: 'Webhooks verification records to handle idempotent payments processing.',
-    ddl: `CREATE TABLE payment_webhooks (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  gateway TEXT NOT NULL, -- 'Paystack' or 'Flutterwave'
-  event_type TEXT NOT NULL,
-  payload JSONB NOT NULL,
-  processed_at TIMESTAMPTZ DEFAULT clock_timestamp()
-);`,
-    rls: `-- Restrict access completely to admin or backend server roles
-ALTER TABLE payment_webhooks ENABLE ROW LEVEL SECURITY;`
-  },
-  {
-    name: 'api_keys',
-    description: 'Developer workspace API tokens for automated programmatic QR creation.',
-    ddl: `CREATE TABLE api_keys (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-  key_prefix TEXT NOT NULL,
-  key_hash TEXT NOT NULL,
-  label TEXT DEFAULT 'Default Key',
-  created_at TIMESTAMPTZ DEFAULT clock_timestamp()
-);`,
-    rls: `-- Only developers can manage their key credentials
-ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Manage personal developer keys" ON api_keys
-  USING (auth.uid() = user_id);`
-  },
-  {
-    name: 'notifications',
-    description: 'Real-time notifications sent to workspaces.',
-    ddl: `CREATE TABLE notifications (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  message TEXT NOT NULL,
-  is_read BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT clock_timestamp()
-);`,
-    rls: `-- User self-read and delete policies
-ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Read and write own notification alerts" ON notifications
-  USING (auth.uid() = user_id);`
-  },
-  {
-    name: 'activity_logs',
-    description: 'Workspace-level historical records of general activities.',
-    ddl: `CREATE TABLE activity_logs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
-  user_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-  action TEXT NOT NULL,
-  details TEXT,
-  created_at TIMESTAMPTZ DEFAULT clock_timestamp()
-);`,
-    rls: `-- Read access for workspace members
-ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Workspace members can view activity trails" ON activity_logs
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM workspace_members
-      WHERE workspace_members.workspace_id = activity_logs.workspace_id
-      AND workspace_members.user_id = auth.uid()
+      AND EXISTS (
+        SELECT 1 FROM workspace_members
+        WHERE workspace_members.workspace_id = folders.workspace_id
+        AND workspace_members.user_id = auth.uid()
+      )
     )
   );`
   },
   {
     name: 'workspaces',
-    description: 'Logical organization units supporting teams and agency hierarchies.',
+    description: 'Multi-tenant workspaces supporting team collaborations and shared billing.',
     ddl: `CREATE TABLE workspaces (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
-  owner_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-  shared_wallet_balance INTEGER DEFAULT 15 CHECK (shared_wallet_balance >= 0),
+  owner_id UUID REFERENCES profiles(id) ON DELETE RESTRICT,
+  shared_wallet_balance INTEGER DEFAULT 0,
+  tier TEXT DEFAULT 'Free' CHECK (tier IN ('Free', 'Premium_Growth', 'Enterprise')),
   created_at TIMESTAMPTZ DEFAULT clock_timestamp()
 );`,
-    rls: `-- Read/write controls based on member validation
+    rls: `-- Only members can query workspace metadata; only owner can delete or upgrade
 ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Members can view workspaces" ON workspaces
+CREATE POLICY "Members can view workspace detail" ON workspaces
   FOR SELECT USING (
     EXISTS (
       SELECT 1 FROM workspace_members
@@ -357,23 +227,62 @@ CREATE POLICY "Members can view workspaces" ON workspaces
   },
   {
     name: 'workspace_members',
-    description: 'Roles mapping users to distinct workspaces.',
+    description: 'Workspace membership map assigning precise seat roles (Owner, Admin, Member, Viewer).',
     ddl: `CREATE TABLE workspace_members (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
   user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK (role IN ('Owner', 'Admin', 'Operator', 'Viewer')),
-  joined_at TIMESTAMPTZ DEFAULT clock_timestamp()
+  role TEXT NOT NULL CHECK (role IN ('Owner', 'Admin', 'Member', 'Viewer')),
+  joined_at TIMESTAMPTZ DEFAULT clock_timestamp(),
+  PRIMARY KEY (workspace_id, user_id)
 );`,
-    rls: `-- General workspace security rules
+    rls: `-- Row level check allowing workspace admins to invite/kick and regular members to read roster
 ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "View team list if member of workspace" ON workspace_members
+CREATE POLICY "Members can read co-workers roster" ON workspace_members
   FOR SELECT USING (
     EXISTS (
       SELECT 1 FROM workspace_members AS self
       WHERE self.workspace_id = workspace_members.workspace_id
       AND self.user_id = auth.uid()
+    )
+  );`
+  },
+  {
+    name: 'wallets',
+    description: 'Central customer credit balance accounts linked with locking structures.',
+    ddl: `CREATE TABLE wallets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id UUID REFERENCES profiles(id) ON DELETE CASCADE UNIQUE,
+  balance INTEGER NOT NULL DEFAULT 0 CHECK (balance >= 0),
+  last_updated TIMESTAMPTZ DEFAULT clock_timestamp()
+);`,
+    rls: `-- Row locked ledger triggers ensure safety. Users only select their own balance
+ALTER TABLE wallets ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can query their own wallet balance" ON wallets
+  FOR SELECT USING (auth.uid() = owner_id);`
+  },
+  {
+    name: 'ledger_transactions',
+    description: 'Atomic transactions ledger capturing audit record of credit ingestion/debits.',
+    ddl: `CREATE TABLE ledger_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  wallet_id UUID REFERENCES wallets(id) ON DELETE CASCADE,
+  change INTEGER NOT NULL, -- positive for credits purchased, negative for usage
+  type TEXT NOT NULL, -- e.g. 'purchase', 'usage', 'refund'
+  reference_code TEXT UNIQUE NOT NULL, -- Flutterwave/Paystack reference, or system UUID
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT clock_timestamp()
+);`,
+    rls: `-- Read-only to owners, append-only to payment verification webhook microservices
+ALTER TABLE ledger_transactions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Owners can audit their own transactions" ON ledger_transactions
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM wallets 
+      WHERE wallets.id = ledger_transactions.wallet_id 
+      AND wallets.owner_id = auth.uid()
     )
   );`
   },
@@ -404,12 +313,114 @@ export default function AdminConsole({
   showToast,
   credits = 15,
   setCredits,
+  workspaces = [],
+  setWorkspaces,
+  currentUser,
+  setCurrentUser,
+  announcement,
+  setAnnouncement,
+  campaigns = [],
+  setCampaigns,
   onAddTransaction
 }: AdminConsoleProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState<'pricing' | 'packages' | 'supabase'>('supabase');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'workspaces' | 'pricing' | 'packages' | 'revenue' | 'consumption' | 'announcements' | 'settings' | 'supabase'>('users');
 
-  // Package Form state
+  // ==========================================
+  // STATE DEFINITIONS & LOCAL PERSISTENCE
+  // ==========================================
+
+  // Users Simulated Database
+  const [simUsers, setSimUsers] = useState<any[]>(() => {
+    const saved = localStorage.getItem('qodex_admin_sim_users');
+    if (saved) return JSON.parse(saved);
+    return [
+      { id: 'user-kunle', name: 'Kunle Adeleke', email: 'kunle@yabaspace.ng', role: 'Admin', isVerified: true, credits: 1200, createdAt: '2026-06-01', workspaceCount: 3 },
+      { id: 'user-tosin', name: 'Tosin Alabi', email: 'tosin@flutterwave.com', role: 'Client', isVerified: true, credits: 25, createdAt: '2026-06-15', workspaceCount: 1 },
+      { id: 'user-amara', name: 'Amara Okafor', email: 'amara@igbofit.com', role: 'Client', isVerified: false, credits: 5, createdAt: '2026-07-01', workspaceCount: 1 },
+      { id: 'user-fatima', name: 'Fatima Musa', email: 'fatima@kanotech.ng', role: 'Operator', isVerified: true, credits: 85, createdAt: '2026-05-10', workspaceCount: 2 },
+      { id: 'user-kofi', name: 'Kofi Mensah', email: 'kofi@accralabs.io', role: 'Client', isVerified: true, credits: 210, createdAt: '2026-06-20', workspaceCount: 1 }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('qodex_admin_sim_users', JSON.stringify(simUsers));
+  }, [simUsers]);
+
+  // Payments / Revenue Ledger
+  const [simPayments, setSimPayments] = useState<any[]>(() => {
+    const saved = localStorage.getItem('qodex_admin_sim_payments');
+    if (saved) return JSON.parse(saved);
+    return [
+      { id: 'pay-1', userName: 'Kunle Adeleke', email: 'kunle@yabaspace.ng', amount: '₦25,000', currency: 'NGN', gateway: 'Flutterwave Webhook', status: 'Approved', creditsAdded: 500, ref: 'FLW-TX-892182', date: '2026-07-15 14:32' },
+      { id: 'pay-2', userName: 'Kofi Mensah', email: 'kofi@accralabs.io', amount: '$20', currency: 'USD', gateway: 'Stripe API', status: 'Approved', creditsAdded: 200, ref: 'STR-TX-551029', date: '2026-07-14 09:11' },
+      { id: 'pay-3', userName: 'Tosin Alabi', email: 'tosin@flutterwave.com', amount: '₦5,000', currency: 'NGN', gateway: 'Paystack checkout', status: 'Pending Approval', creditsAdded: 100, ref: 'PST-TX-990182', date: '2026-07-16 08:45' },
+      { id: 'pay-4', userName: 'Amara Okafor', email: 'amara@igbofit.com', amount: 'KSh 1,200', currency: 'KES', gateway: 'Flutterwave Mobile Money', status: 'Declined', creditsAdded: 0, ref: 'FLW-TX-221144', date: '2026-07-12 18:22' }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('qodex_admin_sim_payments', JSON.stringify(simPayments));
+  }, [simPayments]);
+
+  // Credit Consumption Log
+  const [consumptionLogs, setConsumptionLogs] = useState<any[]>(() => {
+    const saved = localStorage.getItem('qodex_admin_sim_consumption');
+    if (saved) return JSON.parse(saved);
+    return [
+      { id: 'c-1', userEmail: 'kunle@yabaspace.ng', feature: 'Dynamic Short-Link Redirection', creditsSpent: 1, reference: 'CAM-FL-8219', date: '2026-07-16 09:15' },
+      { id: 'c-2', userEmail: 'tosin@flutterwave.com', feature: 'Custom QR Design Styling Update', creditsSpent: 3, reference: 'CAM-FL-3312', date: '2026-07-16 07:11' },
+      { id: 'c-3', userEmail: 'fatima@kanotech.ng', feature: 'vCard QR Premium Generation', creditsSpent: 5, reference: 'CAM-FL-9023', date: '2026-07-15 16:40' },
+      { id: 'c-4', userEmail: 'kofi@accralabs.io', feature: 'Bulk Campaign CSV Import', creditsSpent: 15, reference: 'CAM-BLK-2281', date: '2026-07-15 11:15' },
+      { id: 'c-5', userEmail: 'amara@igbofit.com', feature: 'WiFi Hotspot Access QR config', creditsSpent: 2, reference: 'CAM-FL-4402', date: '2026-07-14 13:02' }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('qodex_admin_sim_consumption', JSON.stringify(consumptionLogs));
+  }, [consumptionLogs]);
+
+  // App-Wide System Config
+  const [sysConfig, setSysConfig] = useState(() => {
+    const saved = localStorage.getItem('qodex_admin_sim_settings');
+    if (saved) return JSON.parse(saved);
+    return {
+      maintenanceMode: false,
+      disableRegistration: false,
+      apiRateLimit: 120,
+      standardQRCost: 1,
+      advancedQRCost: 3,
+      bulkUploadLimit: 100,
+      dbBackupSchedule: 'Daily'
+    };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('qodex_admin_sim_settings', JSON.stringify(sysConfig));
+  }, [sysConfig]);
+
+  // Interactive search state inside Admin
+  const [userSearch, setUserSearch] = useState('');
+  const [selectedUserForWallet, setSelectedUserForWallet] = useState<string | null>(null);
+  const [adjustAmount, setAdjustAmount] = useState<number>(10);
+
+  // Announcement state
+  const [announcementText, setAnnouncementText] = useState('');
+  const [announcementUrgency, setAnnouncementUrgency] = useState<'info' | 'warning' | 'urgent'>('info');
+
+  // Supabase Table state
+  const [selectedTableName, setSelectedTableName] = useState<string>('wallets');
+  const [showDdlType, setShowDdlType] = useState<'ddl' | 'rls'>('ddl');
+
+  // Postgres atomic simulation terminal state
+  const [simScenario, setSimScenario] = useState<'purchase' | 'deduction' | 'race_condition'>('deduction');
+  const [terminalLogs, setTerminalLogs] = useState<string[]>([
+    'PostgreSQL 16.2 database initialized...',
+    'Type \\? for help. Ready for atomic transaction simulations.'
+  ]);
+  const [isSimulating, setIsSimulating] = useState(false);
+
+  // Credit Package state
   const [isEditingPack, setIsEditingPack] = useState<string | null>(null);
   const [packName, setPackName] = useState('');
   const [packCredits, setPackCredits] = useState(10);
@@ -424,17 +435,9 @@ export default function AdminConsole({
   const [editingFeatureId, setEditingFeatureId] = useState<string | null>(null);
   const [editingCost, setEditingCost] = useState(0);
 
-  // Supabase Table state
-  const [selectedTableName, setSelectedTableName] = useState<string>('wallets');
-  const [showDdlType, setShowDdlType] = useState<'ddl' | 'rls'>('ddl');
-
-  // Postgres atomic simulation terminal state
-  const [simScenario, setSimScenario] = useState<'purchase' | 'deduction' | 'race_condition'>('deduction');
-  const [terminalLogs, setTerminalLogs] = useState<string[]>([
-    'PostgreSQL 16.2 database initialized...',
-    'Type \\? for help. Ready for atomic transaction simulations.'
-  ]);
-  const [isSimulating, setIsSimulating] = useState(false);
+  // ==========================================
+  // LOGIC & ACTIONS
+  // ==========================================
 
   // Save modified feature pricing cost
   const handleSaveFeaturePricing = (id: string) => {
@@ -448,7 +451,7 @@ export default function AdminConsole({
     showToast('Admin: Feature credit cost updated successfully!', 'success');
   };
 
-  // Add package feature item
+  // Add package benefit item
   const addFeatureItem = () => {
     if (newFeatureText.trim()) {
       setPackFeatures([...packFeatures, newFeatureText.trim()]);
@@ -456,7 +459,7 @@ export default function AdminConsole({
     }
   };
 
-  // Delete package feature item
+  // Delete package benefit item
   const removeFeatureItem = (idx: number) => {
     setPackFeatures(packFeatures.filter((_, i) => i !== idx));
   };
@@ -553,140 +556,298 @@ export default function AdminConsole({
     const log = (text: string, delay: number) => {
       return new Promise<void>((resolve) => {
         setTimeout(() => {
-          setTerminalLogs(prev => [...prev, text]);
+          setTerminalLogs(prev => [...prev, `[${new Date().toISOString().substring(11, 19)}] ${text}`]);
           resolve();
         }, delay);
       });
     };
 
-    if (simScenario === 'purchase') {
-      await log('qodex_db=> BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED;', 200);
-      await log('qodex_db=> INSERT INTO payments (user_id, package_id, amount, currency, status, reference)', 400);
-      await log("           VALUES ('usr-kunle', 'pack-starter', 5000.00, 'NGN', 'successful', 'REF_SIM_776');", 200);
-      await log('INSERT 0 1', 100);
-      await log('qodex_db=> -- Acquire exclusive lock on user wallet to prevent parallel mutations', 300);
-      await log("qodex_db=> SELECT balance FROM wallets WHERE user_id = 'usr-kunle' FOR UPDATE;", 400);
-      await log(`[ROW LOCK ACQUIRED] Current balance read: ${credits} Credits`, 100);
-      await log("qodex_db=> INSERT INTO wallet_transactions (user_id, type, amount, created_at)", 300);
-      await log("           VALUES ('usr-kunle', 'purchase', 20, NOW());", 200);
-      await log('INSERT 0 1', 100);
-      await log('qodex_db=> UPDATE wallets', 300);
-      await log('           SET balance = balance + 20, total_purchased = total_purchased + 20, updated_at = NOW()', 200);
-      await log("           WHERE user_id = 'usr-kunle';", 100);
-      await log('UPDATE 1', 100);
-      await log('qodex_db=> COMMIT;', 400);
-      await log('[TRANSACTION SUCCESSFUL] Exclusive locks released cleanly.', 100);
-      await log(`[SYNC STATE] +20 credits added to user wallet balance!`, 100);
-
-      // Mutate App State to keep real values synced!
-      if (setCredits) setCredits(prev => prev + 20);
+    if (simScenario === 'deduction') {
+      await log('BEGIN TRANSACTION;', 200);
+      await log('SELECT balance FROM wallets WHERE owner_id = \'user-kunle\' FOR UPDATE;', 400);
+      await log('↳ ROW LOCK (exclusive) acquired successfully on profiles(id: user-kunle).', 200);
+      await log(`-- Evaluating sufficient credits. Current balance: ${credits}. Cost: 3 credits.`, 300);
+      await log('UPDATE wallets SET balance = balance - 3, last_updated = clock_timestamp() WHERE owner_id = \'user-kunle\';', 400);
+      await log('INSERT INTO ledger_transactions (id, wallet_id, change, type, reference_code, description) VALUES (...);', 300);
+      await log('COMMIT;', 200);
+      await log(`SUCCESS: Transaction committed. Wallet balance adjusted from ${credits} to ${credits - 3}.`, 200);
+      
+      // Update real context state
+      if (setCredits) setCredits(Math.max(0, credits - 3));
       if (onAddTransaction) {
         onAddTransaction(
-          'Simulated Pro Starter Purchase (Atomic DB Tx)',
-          'TXN-SIM-' + Math.floor(1000 + Math.random() * 9000),
-          '₦5,000.00',
-          '+20 Credits'
+          'Postgres transaction demo: Campaign Deduction',
+          'QTX-POSTGRES-DEMO',
+          '0.00',
+          '-3'
         );
       }
-      showToast('Database transaction committed! +20 Credits synced.', 'success');
-
-    } else if (simScenario === 'deduction') {
-      const neededCredits = 1;
-      await log('qodex_db=> BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE;', 200);
-      await log('qodex_db=> -- Acquire exclusive FOR UPDATE lock immediately to serialize checks', 300);
-      await log("qodex_db=> SELECT balance FROM wallets WHERE user_id = 'usr-kunle' FOR UPDATE;", 400);
-      await log(`[ROW LOCK ACQUIRED] Current balance: ${credits} Credits`, 100);
-
-      if (credits < neededCredits) {
-        await log(`[ERROR] balance (${credits}) < required (${neededCredits}). Constraint failed.`, 300);
-        await log('qodex_db=> ROLLBACK;', 200);
-        await log('[TRANSACTION ABORTED] Database state unchanged.', 100);
-        showToast('Simulation Aborted: Insufficient credits to perform transaction!', 'error');
-      } else {
-        await log("qodex_db=> INSERT INTO wallet_transactions (user_id, type, amount, created_at)", 300);
-        await log(`           VALUES ('usr-kunle', 'usage', -1, NOW());`, 200);
-        await log('INSERT 0 1', 100);
-        await log('qodex_db=> UPDATE wallets', 300);
-        await log('           SET balance = balance - 1, total_used = total_used + 1, updated_at = NOW()', 200);
-        await log("           WHERE user_id = 'usr-kunle';", 100);
-        await log('UPDATE 1', 100);
-        await log('qodex_db=> COMMIT;', 400);
-        await log('[TRANSACTION SUCCESSFUL] Credit consumed and balance decremented.', 100);
-
-        if (setCredits) setCredits(prev => Math.max(0, prev - 1));
-        if (onAddTransaction) {
-          onAddTransaction(
-            'Simulated Premium QR Download (Atomic DB Tx)',
-            'TXN-SIM-' + Math.floor(1000 + Math.random() * 9000),
-            '0.00',
-            '-1 Credit'
-          );
-        }
-        showToast('Database transaction committed! -1 Credit consumed.', 'success');
+    } else if (simScenario === 'purchase') {
+      await log('BEGIN TRANSACTION;', 200);
+      await log('SELECT balance FROM wallets WHERE owner_id = \'user-kunle\' FOR UPDATE;', 400);
+      await log('↳ ROW LOCK acquired.', 100);
+      await log('UPDATE wallets SET balance = balance + 150 WHERE owner_id = \'user-kunle\';', 400);
+      await log('INSERT INTO ledger_transactions (change, type, reference_code) VALUES (150, \'purchase\', \'FLW-CONCURRENT-991\');', 350);
+      await log('COMMIT;', 200);
+      await log(`SUCCESS: Webhook balance ingested. Credits adjusted from ${credits} to ${credits + 150}.`, 200);
+      
+      if (setCredits) setCredits(credits + 150);
+      if (onAddTransaction) {
+        onAddTransaction(
+          'Postgres transaction demo: Credit Purchase Boost',
+          'QTX-POSTGRES-DEMO',
+          '₦5,000.00',
+          '+150'
+        );
       }
-
     } else if (simScenario === 'race_condition') {
-      await log('=== CONCURRENT RACE CONDITION PREVENTION SIMULATOR ===', 100);
-      await log('[T1] Flutterwave Webhook Request A received - trying to deduct 1 Credit', 200);
-      await log('[T2] Programmatic API Client B received - trying to deduct 1 Credit', 200);
-      await log(`[DB] Initial state in wallets: balance = ${credits}`, 100);
-      await log('', 50);
-
-      await log('[Tx A] Starts: BEGIN;', 200);
-      await log('[Tx B] Starts: BEGIN;', 200);
-      await log("[Tx A] Runs: SELECT balance FROM wallets WHERE user_id = 'usr-kunle' FOR UPDATE;", 300);
-      await log(`[Tx A] Row Locked! Reads balance = ${credits}.`, 100);
-      await log('', 50);
-
-      await log("[Tx B] Runs: SELECT balance FROM wallets WHERE user_id = 'usr-kunle' FOR UPDATE;", 300);
-      await log('[Tx B] STATUS: [BLOCKED] Waiting on exclusive row lock of Tx A...', 400);
-      await log('', 50);
-
-      if (credits < 1) {
-        await log('[Tx A] balance is 0. Aborts with insufficient credits.', 300);
-        await log('[Tx A] Runs: ROLLBACK;', 200);
-        await log('[Tx A] Finished. Row lock released.', 100);
-        await log('', 50);
-
-        await log('[Tx B] STATUS: [RESUMED] Acquired lock released by Tx A.', 300);
-        await log(`[Tx B] Reads balance = ${credits}.`, 100);
-        await log('[Tx B] balance is 0. Aborts with insufficient credits.', 300);
-        await log('[Tx B] Runs: ROLLBACK;', 100);
-        await log('[DB] State preserved correctly.', 100);
-        showToast('Race condition prevented. Both concurrent requests failed safely.', 'info');
-      } else {
-        await log('[Tx A] Processes deduction: UPDATE wallets SET balance = balance - 1;', 300);
-        await log('[Tx A] Runs: COMMIT;', 200);
-        await log('[Tx A] Completed. Lock released.', 100);
-        await log('', 100);
-
-        await log('[Tx B] STATUS: [RESUMED] Acquired row lock! Resumes processing.', 300);
-        await log(`[Tx B] Reads updated balance from MVCC: balance = ${credits - 1}`, 200);
-        
-        if (credits - 1 < 1) {
-          await log('[Tx B] balance is now 0. Aborting safely to prevent negative balance!', 300);
-          await log('[Tx B] Runs: ROLLBACK;', 100);
-          await log('[DB] Final State in Database: balance = ' + (credits - 1) + '. No negative balance occurred!', 100);
-          if (setCredits) setCredits(credits - 1);
-          showToast('Race condition prevented! Trans B rolled back safely.', 'success');
-        } else {
-          await log('[Tx B] Processes deduction: UPDATE wallets SET balance = balance - 1;', 300);
-          await log('[Tx B] Runs: COMMIT;', 200);
-          await log('[Tx B] Completed. Lock released.', 100);
-          await log('[DB] Both requests processed chronologically. New balance = ' + (credits - 2), 100);
-          if (setCredits) setCredits(credits - 2);
-          showToast('Both transactions serialized and completed successfully!', 'success');
-        }
-      }
+      await log('⚡ START CONCURRENT RIVALRY SIMULATION', 100);
+      await log('Connection A: BEGIN; SELECT balance FOR UPDATE; -- locks row', 300);
+      await log('Connection B: BEGIN; SELECT balance FOR UPDATE; -- waiting on lock...', 400);
+      await log('Connection A: UPDATE balance = balance - 5; COMMIT; -- releases lock', 500);
+      await log('Connection B: ↳ Lock acquired! Balance evaluated on updated state.', 300);
+      await log('Connection B: UPDATE balance = balance - 5; COMMIT;', 400);
+      await log('SUCCESS: Race condition fully averted. Concurrent tasks serialized safely via FOR UPDATE row locking.', 300);
     }
 
     setIsSimulating(false);
   };
 
+  // ==========================================
+  // MANAGEMENT FUNCTIONS (THE 12 DIRECTIVES)
+  // ==========================================
+
+  // 1. User role & verification updates
+  const updateUserRole = (userId: string, newRole: string) => {
+    setSimUsers(prev => prev.map(u => {
+      if (u.id === userId) {
+        showToast(`User ${u.name} role updated to ${newRole}`, 'success');
+        // If it is the currently logged in user, synchronize state!
+        if (currentUser && currentUser.id === userId && setCurrentUser) {
+          setCurrentUser({ ...currentUser, role: newRole });
+        }
+        return { ...u, role: newRole };
+      }
+      return u;
+    }));
+  };
+
+  const toggleUserVerification = (userId: string) => {
+    setSimUsers(prev => prev.map(u => {
+      if (u.id === userId) {
+        const nextState = !u.isVerified;
+        showToast(`User ${u.name} verification status is now ${nextState ? 'VERIFIED' : 'UNVERIFIED'}`, 'info');
+        return { ...u, isVerified: nextState };
+      }
+      return u;
+    }));
+  };
+
+  // 2. Wallet & Credits Adjustment
+  const adjustUserCredits = (userId: string, amount: number) => {
+    setSimUsers(prev => prev.map(u => {
+      if (u.id === userId) {
+        const updatedCredits = Math.max(0, u.credits + amount);
+        showToast(`Adjusted wallet of ${u.name} by ${amount > 0 ? '+' : ''}${amount} credits`, 'success');
+        
+        // Log transaction inside general ledger
+        const referenceCode = `QTX-ADJ-${Math.floor(100000 + Math.random() * 900000)}`;
+        setConsumptionLogs(prevLogs => [
+          {
+            id: `c-adj-${Date.now()}`,
+            userEmail: u.email,
+            feature: 'Admin Credit Manual adjustment override',
+            creditsSpent: -amount,
+            reference: referenceCode,
+            date: new Date().toISOString().replace('T', ' ').substring(0, 16)
+          },
+          ...prevLogs
+        ]);
+
+        // If adjusting our own currently active workspace owner wallet, update App state
+        if (userId === 'user-kunle' && setCredits) {
+          setCredits(updatedCredits);
+        }
+
+        return { ...u, credits: updatedCredits };
+      }
+      return u;
+    }));
+    setSelectedUserForWallet(null);
+  };
+
+  // 5. Payment Approval simulation
+  const approveSimulatedPayment = (payId: string) => {
+    setSimPayments(prev => prev.map(p => {
+      if (p.id === payId) {
+        if (p.status === 'Approved') {
+          showToast('Payment already approved.', 'info');
+          return p;
+        }
+
+        // Add credits to user
+        setSimUsers(uPrev => uPrev.map(u => {
+          if (u.email === p.email) {
+            const added = p.creditsAdded || 100;
+            showToast(`Approved payment! Credited ${added} credits to ${u.name}`, 'success');
+            
+            if (u.id === 'user-kunle' && setCredits) {
+              setCredits(prev => prev + added);
+            }
+            
+            // Log in main transaction ledger
+            if (onAddTransaction) {
+              onAddTransaction(
+                `Payment Approved: ${p.gateway}`,
+                p.ref,
+                p.amount,
+                `+${added}`
+              );
+            }
+
+            return { ...u, credits: u.credits + added };
+          }
+          return u;
+        }));
+
+        return { ...p, status: 'Approved' };
+      }
+      return p;
+    }));
+  };
+
+  // Decline/Refund simulated payment
+  const declineSimulatedPayment = (payId: string) => {
+    setSimPayments(prev => prev.map(p => {
+      if (p.id === payId) {
+        showToast(`Payment ${p.ref} marked as Refunded / Declined`, 'info');
+        return { ...p, status: 'Declined' };
+      }
+      return p;
+    }));
+  };
+
+  // 10. Generate Compliance & Audit Report (HTML/Markdown Mockup)
+  const [generatedReport, setGeneratedReport] = useState<string | null>(null);
+  const generateExecutiveReport = () => {
+    const totalRev = simPayments
+      .filter(p => p.status === 'Approved')
+      .reduce((acc, curr) => {
+        const val = parseInt(curr.amount.replace(/[^0-9]/g, ''), 10) || 0;
+        return acc + val;
+      }, 0);
+
+    const totalCreditsGranted = simPayments
+      .filter(p => p.status === 'Approved')
+      .reduce((acc, curr) => acc + (curr.creditsAdded || 0), 0);
+
+    const totalCreditsSpent = consumptionLogs.reduce((acc, curr) => acc + curr.creditsSpent, 0);
+
+    const markdown = `# QODEX EXECUTIVE FINANCIAL & AUDIT REPORT
+**Generated:** ${new Date().toLocaleString()}
+**Classification:** STRICTLY CONFIDENTIAL - SYSTEM ADMIN OVERVIEW
+
+---
+
+### 📈 KEY PERFORMANCE INDICATORS
+- **Total Ledger Inflow:** ₦${totalRev.toLocaleString()} (Verified Paystack & Flutterwave checkouts)
+- **Total Granted Credits:** ${totalCreditsGranted} credits
+- **Active Credit Circulation:** ${simUsers.reduce((acc, curr) => acc + curr.credits, 0)} credits in user wallets
+- **Core Consumption Volume:** ${totalCreditsSpent} credits consumed via feature invocation
+- **Registered User Accounts:** ${simUsers.length} total profiles
+- **Configured Workspaces:** ${workspaces.length > 0 ? workspaces.length : 3} team domains
+
+### 🛠️ FEATURE CONSUMPTION INTENSITY
+- Dynamic Short-Link updates represent 45% of daily traffic.
+- vCard QR Premium customization ranks highest in credit-to-cost conversion efficiency.
+
+---
+### ⚖️ REGULATORY COMPLIANCE STANCE
+*This report conforms to CBN Payment Gateway mandates and local African anti-fraud frameworks. All API transactions are authenticated server-side via row lock guarantees.*`;
+
+    setGeneratedReport(markdown);
+    showToast('Executive system compliance report generated successfully!', 'success');
+  };
+
+  // 11. Broadcast announcement publishing
+  const handlePublishAnnouncement = () => {
+    if (!announcementText.trim()) {
+      showToast('Please type announcement text first.', 'error');
+      return;
+    }
+    
+    let prefix = '📢 ';
+    if (announcementUrgency === 'warning') prefix = '⚠️ SYSTEM ALERT: ';
+    if (announcementUrgency === 'urgent') prefix = '🚨 EMERGENCY BROADCAST: ';
+
+    const fullMessage = `${prefix}${announcementText.trim()}`;
+    if (setAnnouncement) {
+      setAnnouncement(fullMessage);
+      localStorage.setItem('qodex_broadcast_announcement', fullMessage);
+      showToast('Announcement broadcasted to all active user viewports!', 'success');
+    }
+  };
+
+  const handleClearAnnouncement = () => {
+    if (setAnnouncement) {
+      setAnnouncement(null);
+      localStorage.removeItem('qodex_broadcast_announcement');
+      setAnnouncementText('');
+      showToast('Broadcast banner removed from system viewports.', 'info');
+    }
+  };
+
+  // 12. Workspace Seat & Custom Quotas
+  const adjustWorkspaceSeatLimit = (wsId: string, inc: number) => {
+    if (setWorkspaces) {
+      setWorkspaces(prev => prev.map(w => {
+        if (w.id === wsId) {
+          const currentLimit = w.seatsLimit || 5;
+          const nextLimit = Math.max(1, currentLimit + inc);
+          showToast(`Workspace "${w.name}" seat capacity updated to ${nextLimit}`, 'success');
+          return { ...w, seatsLimit: nextLimit };
+        }
+        return w;
+      }));
+    }
+  };
+
+  const adjustWorkspaceWalletBalance = (wsId: string, inc: number) => {
+    if (setWorkspaces) {
+      setWorkspaces(prev => prev.map(w => {
+        if (w.id === wsId) {
+          const currentBal = w.sharedWalletBalance || 0;
+          const nextBal = Math.max(0, currentBal + inc);
+          showToast(`Workspace "${w.name}" shared balance adjusted by ${inc > 0 ? '+' : ''}${inc}`, 'success');
+          return { ...w, sharedWalletBalance: nextBal };
+        }
+        return w;
+      }));
+    }
+  };
+
+  const transferWorkspaceOwnership = (wsId: string, newEmail: string) => {
+    if (setWorkspaces) {
+      setWorkspaces(prev => prev.map(w => {
+        if (w.id === wsId) {
+          showToast(`Workspace ownership transferred to ${newEmail}`, 'success');
+          return { ...w, ownerEmail: newEmail };
+        }
+        return w;
+      }));
+    }
+  };
+
+  // Filtered Users List
+  const filteredUsers = simUsers.filter(u => 
+    u.name.toLowerCase().includes(userSearch.toLowerCase()) || 
+    u.email.toLowerCase().includes(userSearch.toLowerCase())
+  );
+
   const selectedTable = SUPABASE_SCHEMA_TABLES.find(t => t.name === selectedTableName) || SUPABASE_SCHEMA_TABLES[0];
 
   return (
-    <div id="admin-panel-container" className="bg-slate-950 border border-slate-900 rounded-3xl overflow-hidden mt-8">
+    <div className="bg-[#0b1329] border border-slate-900 rounded-2xl overflow-hidden shadow-2xl">
       {/* HEADER BAR */}
       <div 
         onClick={() => setIsOpen(!isOpen)} 
@@ -698,267 +859,755 @@ export default function AdminConsole({
           </div>
           <div>
             <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-              System Admin &amp; Database Console
+              Enterprise Admin Command Center
               <span className="text-[9px] uppercase font-bold tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded">
                 Admin Mode
               </span>
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Analyze schema structures, configure core credit policies, and simulate atomic concurrent wallet transaction logs.
+              Control users, wallets, feature pricing, workspace team seats, payments, and system broadcasts.
             </p>
           </div>
         </div>
-        <button className="text-slate-400 hover:text-slate-100 font-extrabold text-xs bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl transition-all">
-          {isOpen ? 'Close Console' : 'Open Admin Panel'}
+        <button className="text-slate-400 hover:text-slate-100 font-extrabold text-xs bg-slate-950 border border-slate-800 px-4 py-2 rounded-xl transition-all">
+          {isOpen ? 'Minimize Panel' : 'Expand Command Center'}
         </button>
       </div>
 
       {isOpen && (
         <div className="p-6 space-y-6 animate-fade-in bg-slate-950/80">
-          {/* CONSOLE NAVIGATION */}
-          <div className="flex flex-wrap gap-2 border-b border-slate-900 pb-3">
+          
+          {/* HIGH-LEVEL METRICS OVERVIEW */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-slate-900/40 border border-slate-800/60 rounded-xl p-4 flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+                <Users className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-400 font-bold uppercase">System Users</p>
+                <p className="text-lg font-extrabold text-slate-100">{simUsers.length}</p>
+              </div>
+            </div>
+            <div className="bg-slate-900/40 border border-slate-800/60 rounded-xl p-4 flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-400">
+                <TrendingUp className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-400 font-bold uppercase">Total Revenue</p>
+                <p className="text-lg font-extrabold text-slate-100">₦30,000</p>
+              </div>
+            </div>
+            <div className="bg-slate-900/40 border border-slate-800/60 rounded-xl p-4 flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-blue-500/10 text-blue-400">
+                <Activity className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-400 font-bold uppercase">Usage Decs</p>
+                <p className="text-lg font-extrabold text-slate-100">{consumptionLogs.length} events</p>
+              </div>
+            </div>
+            <div className="bg-slate-900/40 border border-slate-800/60 rounded-xl p-4 flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-400">
+                <Sliders className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-400 font-bold uppercase">API limit</p>
+                <p className="text-lg font-extrabold text-slate-100">{sysConfig.apiRateLimit}/min</p>
+              </div>
+            </div>
+          </div>
+
+          {/* SYSTEM ADMINISTRATOR SIDE NAVIGATION TABS */}
+          <div className="flex flex-wrap gap-1.5 border-b border-slate-900 pb-3 overflow-x-auto">
             <button
-              onClick={() => { setActiveSubTab('supabase'); setIsEditingPack(null); }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${activeSubTab === 'supabase' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+              onClick={() => { setActiveSubTab('users'); setIsEditingPack(null); }}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${activeSubTab === 'users' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
             >
-              <Database className="h-3.5 w-3.5" /> Supabase Database Schema ({SUPABASE_SCHEMA_TABLES.length} Tables)
+              <Users className="h-3.5 w-3.5" /> Manage Users &amp; Wallets
+            </button>
+            <button
+              onClick={() => { setActiveSubTab('workspaces'); setIsEditingPack(null); }}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${activeSubTab === 'workspaces' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              <Briefcase className="h-3.5 w-3.5" /> Workspace &amp; Team (NEW)
+            </button>
+            <button
+              onClick={() => { setActiveSubTab('revenue'); setIsEditingPack(null); }}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${activeSubTab === 'revenue' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              <DollarSign className="h-3.5 w-3.5" /> Payments &amp; Revenue
+            </button>
+            <button
+              onClick={() => { setActiveSubTab('consumption'); setIsEditingPack(null); }}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${activeSubTab === 'consumption' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              <Activity className="h-3.5 w-3.5" /> Consumption Ledger
+            </button>
+            <button
+              onClick={() => { setActiveSubTab('announcements'); setIsEditingPack(null); }}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${activeSubTab === 'announcements' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              <Bell className="h-3.5 w-3.5" /> Broadcaster Hub
             </button>
             <button
               onClick={() => { setActiveSubTab('pricing'); setIsEditingPack(null); }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${activeSubTab === 'pricing' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${activeSubTab === 'pricing' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
             >
-              📊 Feature Pricing Costs
+              📊 Feature Pricing
             </button>
             <button
-              onClick={() => setActiveSubTab('packages')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${activeSubTab === 'packages' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+              onClick={() => { setActiveSubTab('packages'); setIsEditingPack(null); }}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${activeSubTab === 'packages' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
             >
-              🎁 Manage Credit Packages ({packages.length})
+              🎁 Credit Packages
+            </button>
+            <button
+              onClick={() => { setActiveSubTab('settings'); setIsEditingPack(null); }}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${activeSubTab === 'settings' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              <Sliders className="h-3.5 w-3.5" /> App Config
+            </button>
+            <button
+              onClick={() => { setActiveSubTab('supabase'); setIsEditingPack(null); }}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${activeSubTab === 'supabase' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              <Database className="h-3.5 w-3.5" /> DB Schema &amp; Engine
             </button>
           </div>
 
-          {/* TAB: SUPABASE DATABASE */}
-          {activeSubTab === 'supabase' && (
-            <div className="space-y-6">
-              
-              {/* TRANSACTION WORKFLOW SIMULATOR */}
-              <div className="bg-slate-900/40 border border-slate-900 rounded-2xl p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          {/* ==========================================
+              TAB 1: USERS & WALLETS
+             ========================================== */}
+          {activeSubTab === 'users' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
+                <div className="relative flex-1 w-full">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                  <input
+                    type="text"
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    placeholder="Search users by name, email or ID..."
+                    className="w-full bg-slate-900/60 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/60"
+                  />
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button 
+                    onClick={() => {
+                      const id = `user-${Date.now()}`;
+                      setSimUsers([...simUsers, {
+                        id, name: 'Guest Client Sim', email: `guest-${Math.floor(Math.random() * 900)}@qodex.io`, role: 'Client', isVerified: false, credits: 15, createdAt: new Date().toISOString().substring(0, 10), workspaceCount: 1
+                      }]);
+                      showToast('Simulated guest client user added!', 'success');
+                    }}
+                    className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3 py-2 rounded-xl flex items-center justify-center gap-1.5"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Create Guest User
+                  </button>
+                </div>
+              </div>
+
+              {/* WALLET MANUAL ADJUSTMENT DRAWER */}
+              {selectedUserForWallet && (
+                <div className="bg-slate-900 border border-indigo-500/20 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-fade-in">
                   <div>
-                    <h4 className="text-xs uppercase font-extrabold text-indigo-400 flex items-center gap-1.5 tracking-wider">
-                      <Terminal className="h-4 w-4" /> Postgres Atomic Wallet Transaction Simulator
-                    </h4>
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      See how Row Level Security (RLS) is validated and how race conditions are prevented during credit deductions using Postgres transaction locking.
+                    <h5 className="text-xs font-bold text-indigo-400 flex items-center gap-1.5 uppercase">
+                      <CreditCard className="h-4 w-4" /> Override User Balance
+                    </h5>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Adjust wallet credits for user: <span className="text-slate-200 font-semibold">{simUsers.find(u => u.id === selectedUserForWallet)?.name}</span>
                     </p>
                   </div>
-                  
-                  {/* SCENARIO PICKER */}
-                  <div className="flex gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-900 self-stretch sm:self-auto">
+                  <div className="flex items-center gap-2 self-stretch sm:self-auto">
+                    <input
+                      type="number"
+                      value={adjustAmount}
+                      onChange={(e) => setAdjustAmount(parseInt(e.target.value, 10) || 0)}
+                      className="w-24 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 font-mono text-center font-extrabold"
+                    />
                     <button
-                      onClick={() => setSimScenario('deduction')}
-                      className={`px-3 py-1 text-[10px] rounded-lg font-bold transition-all flex-1 sm:flex-initial ${simScenario === 'deduction' ? 'bg-indigo-600 text-slate-50' : 'text-slate-500 hover:text-slate-300'}`}
+                      onClick={() => adjustUserCredits(selectedUserForWallet, adjustAmount)}
+                      className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-4 py-2 rounded-xl"
                     >
-                      Usage Deduction
+                      Credit (+{adjustAmount})
                     </button>
                     <button
-                      onClick={() => setSimScenario('purchase')}
-                      className={`px-3 py-1 text-[10px] rounded-lg font-bold transition-all flex-1 sm:flex-initial ${simScenario === 'purchase' ? 'bg-indigo-600 text-slate-50' : 'text-slate-500 hover:text-slate-300'}`}
+                      onClick={() => adjustUserCredits(selectedUserForWallet, -adjustAmount)}
+                      className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2 rounded-xl"
                     >
-                      Credit Purchase
+                      Debit (-{adjustAmount})
                     </button>
                     <button
-                      onClick={() => setSimScenario('race_condition')}
-                      className={`px-3 py-1 text-[10px] rounded-lg font-bold transition-all flex-1 sm:flex-initial ${simScenario === 'race_condition' ? 'bg-indigo-600 text-slate-50' : 'text-slate-500 hover:text-slate-300'}`}
+                      onClick={() => setSelectedUserForWallet(null)}
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-400 p-2 rounded-xl text-xs"
                     >
-                      Prevent Race Condition
+                      ✕
                     </button>
                   </div>
                 </div>
+              )}
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                  {/* SIMULATOR CONTROLS */}
-                  <div className="lg:col-span-5 space-y-4 flex flex-col justify-between">
-                    <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 space-y-2.5">
-                      <div className="flex justify-between items-center text-[11px]">
-                        <span className="text-slate-400">Target Table:</span>
-                        <span className="font-mono text-emerald-400 font-bold">wallets, wallet_transactions</span>
-                      </div>
-                      <div className="flex justify-between items-center text-[11px]">
-                        <span className="text-slate-400">Current Balance:</span>
-                        <span className="font-mono text-indigo-400 font-extrabold bg-indigo-500/10 px-2 py-0.5 rounded-full">{credits} Credits</span>
-                      </div>
-                      
-                      <div className="border-t border-slate-900/80 pt-2.5 mt-1.5">
-                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Scenario Mechanics</span>
-                        <p className="text-[10px] text-slate-500 leading-relaxed mt-1">
-                          {simScenario === 'deduction' && "Acquires exclusive row lock via SELECT FOR UPDATE, checks if balance >= 1, writes a ledger log, updates 'wallets' table, and commits. Prevents overdrawn balances."}
-                          {simScenario === 'purchase' && "Atomic transaction that processes Flutterwave/Paystack checkout payloads, creates a successful record in payment ledger, acquires FOR UPDATE row locks, and increments credits."}
-                          {simScenario === 'race_condition' && "Simulates 2 parallel requests trying to spend credits at the exact same millisecond. Proves how Postgres exclusive locks serialize checks, completely preventing balance race slips."}
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={runTransactionSimulation}
-                      disabled={isSimulating}
-                      className="w-full bg-gradient-to-r from-emerald-500 to-indigo-600 text-slate-950 hover:text-slate-50 font-black py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-md border border-emerald-400/20"
-                    >
-                      {isSimulating ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 animate-spin" /> Executing Transaction...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4" /> Execute SQL Transaction
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  {/* TERMINAL OUTPUT */}
-                  <div className="lg:col-span-7 bg-slate-950 border border-slate-900 rounded-xl p-4 font-mono text-[10px] text-indigo-300 space-y-1.5 min-h-[160px] max-h-[220px] overflow-y-auto">
-                    {terminalLogs.map((logStr, i) => (
-                      <div key={i} className={`leading-relaxed whitespace-pre-wrap ${logStr.startsWith('[ERROR]') ? 'text-rose-500 font-bold' : logStr.startsWith('[SUCCESS]') || logStr.includes('SUCCESSFUL') ? 'text-emerald-400 font-bold' : logStr.includes('qodex_db') ? 'text-slate-300' : 'text-slate-400'}`}>
-                        {logStr}
-                      </div>
+              {/* USERS DATA LIST */}
+              <div className="bg-slate-900/30 border border-slate-900 rounded-2xl overflow-hidden">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-900/60 border-b border-slate-900 text-slate-400 font-bold">
+                      <th className="py-3 px-4">User Details</th>
+                      <th className="py-3 px-4">Role / Compliance</th>
+                      <th className="py-3 px-4">Wallet Balance</th>
+                      <th className="py-3 px-4 text-right">Administrative Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-900">
+                    {filteredUsers.map((user) => (
+                      <tr key={user.id} className="hover:bg-slate-900/20 transition-all">
+                        <td className="py-4 px-4">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-slate-200">{user.name}</span>
+                              {user.isVerified ? (
+                                <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8px] uppercase tracking-wider font-extrabold px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                                  ✓ Verified
+                                </span>
+                              ) : (
+                                <span className="bg-slate-800 text-slate-400 text-[8px] uppercase font-extrabold px-1.5 py-0.5 rounded">
+                                  Unverified
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-400 font-mono mt-0.5">{user.email}</p>
+                            <p className="text-[9px] text-slate-500 mt-1">Joined: {user.createdAt} • ID: {user.id}</p>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="space-y-1.5">
+                            <select
+                              value={user.role}
+                              onChange={(e) => updateUserRole(user.id, e.target.value)}
+                              className="bg-slate-950 border border-slate-800 text-[10px] text-slate-300 rounded px-1.5 py-1 focus:outline-none focus:border-indigo-500"
+                            >
+                              <option value="Admin">Admin Owner</option>
+                              <option value="Operator">System Operator</option>
+                              <option value="Client">General Client</option>
+                            </select>
+                            <p className="text-[9px] text-slate-400">Domains: {user.workspaceCount} workspaces</p>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-extrabold text-emerald-400 text-sm">
+                              {user.credits}
+                            </span>
+                            <span className="text-[10px] text-slate-400">credits</span>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4 text-right space-x-1">
+                          <button
+                            onClick={() => { setSelectedUserForWallet(user.id); setAdjustAmount(20); }}
+                            className="bg-slate-950 border border-slate-800 hover:border-slate-700 text-indigo-400 text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition-all"
+                          >
+                            Adjust Balance
+                          </button>
+                          <button
+                            onClick={() => toggleUserVerification(user.id)}
+                            className="bg-slate-950 border border-slate-800 hover:border-slate-700 text-emerald-400 text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition-all"
+                          >
+                            {user.isVerified ? 'Revoke Verify' : 'Grant Verify'}
+                          </button>
+                        </td>
+                      </tr>
                     ))}
-                  </div>
-                </div>
+                  </tbody>
+                </table>
               </div>
-
-              {/* TABLE LIST & DEFINITIONS */}
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                
-                {/* LEFT: TABLE INDEX */}
-                <div className="md:col-span-4 bg-slate-950 border border-slate-900 rounded-2xl p-4 space-y-2 max-h-[420px] overflow-y-auto">
-                  <span className="block text-[10px] uppercase font-extrabold tracking-wider text-slate-500 mb-2 px-1">Supabase DB Tables index</span>
-                  
-                  {SUPABASE_SCHEMA_TABLES.map((tbl) => (
-                    <button
-                      key={tbl.name}
-                      onClick={() => setSelectedTableName(tbl.name)}
-                      className={`w-full text-left p-2 rounded-xl transition-all border flex items-center justify-between ${selectedTableName === tbl.name ? 'bg-indigo-600/10 border-indigo-500/30 text-indigo-400' : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200'}`}
-                    >
-                      <div className="truncate pr-2">
-                        <span className="text-xs font-mono font-bold block">{tbl.name}</span>
-                        <span className="text-[9px] text-slate-500 truncate block mt-0.5">{tbl.description}</span>
-                      </div>
-                      <ChevronRight className="h-3 w-3 text-slate-600 shrink-0" />
-                    </button>
-                  ))}
-                </div>
-
-                {/* RIGHT: DDL & RLS VIEW */}
-                <div className="md:col-span-8 bg-slate-900/30 border border-slate-900 rounded-2xl p-5 space-y-4">
-                  <div className="flex justify-between items-center border-b border-slate-900 pb-3">
-                    <div>
-                      <h5 className="text-xs font-bold text-slate-200 font-mono">table {selectedTable.name}</h5>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{selectedTable.description}</p>
-                    </div>
-
-                    <div className="flex bg-slate-950 border border-slate-900 p-0.5 rounded-lg">
-                      <button
-                        onClick={() => setShowDdlType('ddl')}
-                        className={`px-2.5 py-1 text-[9px] font-bold uppercase rounded-md transition-all ${showDdlType === 'ddl' ? 'bg-slate-800 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
-                      >
-                        SQL DDL
-                      </button>
-                      <button
-                        onClick={() => setShowDdlType('rls')}
-                        className={`px-2.5 py-1 text-[9px] font-bold uppercase rounded-md transition-all ${showDdlType === 'rls' ? 'bg-slate-800 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
-                      >
-                        RLS Policies
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="relative">
-                    <pre className="bg-slate-950 border border-slate-900 rounded-xl p-4 text-[10px] font-mono text-slate-300 overflow-x-auto whitespace-pre leading-relaxed">
-                      <code>
-                        {showDdlType === 'ddl' ? selectedTable.ddl : selectedTable.rls}
-                      </code>
-                    </pre>
-
-                    <span className="absolute top-3 right-3 text-[8px] font-mono tracking-widest text-slate-600 bg-slate-900 px-2 py-0.5 rounded uppercase">
-                      Postgres 16
-                    </span>
-                  </div>
-
-                  <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-900/60 flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-emerald-400 shrink-0 animate-pulse" />
-                    <span className="text-[9.5px] text-slate-400 leading-normal">
-                      Security Check: Row-Level Security (RLS) is <strong className="text-emerald-400">ENABLED</strong> on this table to reject unauthorized client requests automatically.
-                    </span>
-                  </div>
-                </div>
-
-              </div>
-
             </div>
           )}
 
-          {/* TAB: FEATURE PRICING */}
+          {/* ==========================================
+              TAB 2: WORKSPACE & TEAM SEATS (NEW)
+             ========================================== */}
+          {activeSubTab === 'workspaces' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-2xl">
+                <h4 className="text-xs uppercase font-extrabold text-indigo-400 tracking-wider flex items-center gap-1.5">
+                  <Briefcase className="h-4 w-4" /> Multi-Tenant Workspace &amp; Team Limits Override
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Enforce strict administrative boundaries on group workspaces. Control absolute member seats limit, override wallets, and transfer owners of workspaces.
+                </p>
+              </div>
+
+              {/* LIST OF SYSTEM WORKSPACES */}
+              <div className="space-y-3">
+                {workspaces.map((ws: any) => (
+                  <div key={ws.id} className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-950 pb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-extrabold text-slate-200">{ws.name}</span>
+                          <span className="bg-indigo-500/10 text-indigo-400 text-[9px] uppercase font-extrabold tracking-wider border border-indigo-500/10 px-2 py-0.5 rounded">
+                            {ws.tier || 'GROWTH'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Workspace UUID: <strong className="font-mono text-slate-300">{ws.id}</strong></p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-500 block">SHARED WALLET</span>
+                          <span className="font-mono font-bold text-sm text-indigo-300">{ws.sharedWalletBalance} credits</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Control 1: Member Seats Limit */}
+                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-900 flex flex-col justify-between">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-bold">Absolute Seat Capacity</span>
+                          <p className="text-xs text-slate-500 mt-0.5">Max staff members permitted</p>
+                        </div>
+                        <div className="flex items-center gap-2 mt-3">
+                          <button
+                            onClick={() => adjustWorkspaceSeatLimit(ws.id, -1)}
+                            className="bg-slate-900 hover:bg-slate-800 text-slate-300 font-extrabold p-1.5 rounded-lg border border-slate-800"
+                          >
+                            -
+                          </button>
+                          <span className="font-mono font-bold text-slate-200 text-xs flex-1 text-center">
+                            {ws.seatsLimit || 5} Seats limit
+                          </span>
+                          <button
+                            onClick={() => adjustWorkspaceSeatLimit(ws.id, 1)}
+                            className="bg-slate-900 hover:bg-slate-800 text-slate-300 font-extrabold p-1.5 rounded-lg border border-slate-800"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Control 2: Direct Credit Overrides */}
+                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-900 flex flex-col justify-between">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-bold">Inject Workspace Balance</span>
+                          <p className="text-xs text-slate-500 mt-0.5">Manual injection override</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-3">
+                          <button
+                            onClick={() => adjustWorkspaceWalletBalance(ws.id, 50)}
+                            className="flex-1 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400 font-bold text-[10px] py-1.5 rounded-lg"
+                          >
+                            +50 Credits
+                          </button>
+                          <button
+                            onClick={() => adjustWorkspaceWalletBalance(ws.id, -50)}
+                            className="flex-1 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 text-rose-400 font-bold text-[10px] py-1.5 rounded-lg"
+                          >
+                            -50 Credits
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Control 3: Change Owner */}
+                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-900 flex flex-col justify-between">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-bold">Reassign Owner Profile</span>
+                          <p className="text-xs text-slate-500 mt-0.5">Transfer domains &amp; assets</p>
+                        </div>
+                        <div className="mt-3">
+                          <select
+                            onChange={(e) => transferWorkspaceOwnership(ws.id, e.target.value)}
+                            defaultValue=""
+                            className="w-full bg-slate-900 border border-slate-800 text-[10px] text-slate-300 rounded px-2 py-1.5 focus:outline-none"
+                          >
+                            <option value="" disabled>Select target email...</option>
+                            <option value="kunle@yabaspace.ng">Kunle (Admin)</option>
+                            <option value="tosin@flutterwave.com">Tosin (Flutterwave)</option>
+                            <option value="fatima@kanotech.ng">Fatima (Operator)</option>
+                            <option value="kofi@accralabs.io">Kofi (AccraLabs)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ==========================================
+              TAB 3: REVENUE & PAYMENTS SANDBOX
+             ========================================== */}
+          {activeSubTab === 'revenue' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="flex justify-between items-center bg-slate-900/40 border border-slate-800 p-4 rounded-2xl">
+                <div>
+                  <h4 className="text-xs uppercase font-extrabold text-indigo-400 tracking-wider">
+                    💳 Payments &amp; Revenue Reconciliation Console
+                  </h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Process simulated Flutterwave Webhook posts, manage client invoices, and trigger general reports.
+                  </p>
+                </div>
+                <button
+                  onClick={generateExecutiveReport}
+                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-md"
+                >
+                  <FileText className="h-4 w-4" /> Run Compliance Report
+                </button>
+              </div>
+
+              {/* REPORT DISPLAY IF GENERATED */}
+              {generatedReport && (
+                <div className="bg-slate-950 border border-emerald-500/30 rounded-2xl p-5 relative animate-fade-in font-mono text-xs">
+                  <button 
+                    onClick={() => setGeneratedReport(null)}
+                    className="absolute top-4 right-4 text-slate-400 hover:text-slate-100 font-bold"
+                  >
+                    ✕ Clear Report View
+                  </button>
+                  <pre className="text-emerald-300 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto pr-2">
+                    {generatedReport}
+                  </pre>
+                  <div className="mt-4 flex gap-2">
+                    <button 
+                      onClick={() => {
+                        const blob = new Blob([generatedReport], { type: 'text/plain' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'qodex-ledger-compliance-audit.md';
+                        a.click();
+                        showToast('Audit log downloaded as markdown!', 'success');
+                      }}
+                      className="bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Download audit report (.md)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* SIMULATED WEBHOOK PAYMENTS INFLOW */}
+              <div className="bg-slate-900/30 border border-slate-900 rounded-2xl overflow-hidden">
+                <div className="px-4 py-3 bg-slate-900/40 border-b border-slate-900 flex justify-between items-center">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Gateway Sandbox Ledger</span>
+                  <span className="text-[9px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-bold font-mono">SIMULATION Webhooks</span>
+                </div>
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-950/60 text-slate-400 font-semibold border-b border-slate-900">
+                      <th className="py-2 px-4">Inflow User</th>
+                      <th className="py-2 px-4">Amount / Credits</th>
+                      <th className="py-2 px-4">Reference &amp; Gateway</th>
+                      <th className="py-2 px-4">State</th>
+                      <th className="py-2 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-900">
+                    {simPayments.map((pay) => (
+                      <tr key={pay.id} className="hover:bg-slate-900/10">
+                        <td className="py-3 px-4">
+                          <div>
+                            <span className="font-extrabold text-slate-200">{pay.userName}</span>
+                            <span className="block text-[10px] text-slate-400">{pay.email}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div>
+                            <span className="font-mono text-emerald-400 font-bold">{pay.amount}</span>
+                            <span className="block text-[10px] text-slate-400">+{pay.creditsAdded} credits</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div>
+                            <span className="font-mono text-slate-300 font-semibold text-[10px]">{pay.ref}</span>
+                            <span className="block text-[10px] text-slate-500 font-sans">{pay.gateway}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border ${pay.status === 'Approved' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : pay.status === 'Declined' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
+                            {pay.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right space-x-1">
+                          {pay.status === 'Pending Approval' && (
+                            <>
+                              <button
+                                onClick={() => approveSimulatedPayment(pay.id)}
+                                className="bg-emerald-500 text-slate-950 text-[10px] font-bold px-2.5 py-1 rounded"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => declineSimulatedPayment(pay.id)}
+                                className="bg-rose-600 text-white text-[10px] font-bold px-2.5 py-1 rounded"
+                              >
+                                Decline
+                              </button>
+                            </>
+                          )}
+                          {pay.status === 'Approved' && (
+                            <span className="text-[10px] text-slate-500 italic">Reconciled</span>
+                          )}
+                          {pay.status === 'Declined' && (
+                            <span className="text-[10px] text-slate-500 line-through">Failed</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ==========================================
+              TAB 4: CREDIT CONSUMPTION AUDIT
+             ========================================== */}
+          {activeSubTab === 'consumption' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h4 className="text-xs uppercase font-extrabold text-indigo-400 tracking-wider">
+                    ⚡ Live Credit Consumption Ledger &amp; Analytics
+                  </h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Audit real-time platform overhead. Watch debits occur as users execute dynamic campaign redirects, WIFI styling configs, and bulk imports.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setConsumptionLogs([]);
+                    showToast('Platform consumption log buffer cleared!', 'info');
+                  }}
+                  className="bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs px-3 py-1.5 rounded-xl"
+                >
+                  Clear Log Buffer
+                </button>
+              </div>
+
+              {/* STATIC SVG BAR CHART RECONCILIATION */}
+              <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 space-y-4">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">7-Day Platform Credit Debits Profile</span>
+                  <p className="text-[9px] text-slate-500">Peak hour activity distribution chart</p>
+                </div>
+                <div className="h-28 w-full flex items-end gap-3 pt-4 border-b border-slate-800 pb-2">
+                  <div className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                    <div className="w-full bg-indigo-500/20 hover:bg-indigo-500/40 border-t-2 border-indigo-500 rounded-t h-[40%] transition-all"></div>
+                    <span className="text-[8px] text-slate-500 font-mono">MON</span>
+                  </div>
+                  <div className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                    <div className="w-full bg-indigo-500/20 hover:bg-indigo-500/40 border-t-2 border-indigo-500 rounded-t h-[65%] transition-all"></div>
+                    <span className="text-[8px] text-slate-500 font-mono">TUE</span>
+                  </div>
+                  <div className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                    <div className="w-full bg-indigo-500/20 hover:bg-indigo-500/40 border-t-2 border-indigo-500 rounded-t h-[85%] transition-all"></div>
+                    <span className="text-[8px] text-slate-500 font-mono">WED</span>
+                  </div>
+                  <div className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                    <div className="w-full bg-emerald-500/20 hover:bg-emerald-500/40 border-t-2 border-emerald-500 rounded-t h-[95%] transition-all"></div>
+                    <span className="text-[8px] text-slate-400 font-extrabold font-mono">THU (Peak)</span>
+                  </div>
+                  <div className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                    <div className="w-full bg-indigo-500/20 hover:bg-indigo-500/40 border-t-2 border-indigo-500 rounded-t h-[55%] transition-all"></div>
+                    <span className="text-[8px] text-slate-500 font-mono">FRI</span>
+                  </div>
+                  <div className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                    <div className="w-full bg-indigo-500/20 hover:bg-indigo-500/40 border-t-2 border-indigo-500 rounded-t h-[30%] transition-all"></div>
+                    <span className="text-[8px] text-slate-500 font-mono">SAT</span>
+                  </div>
+                  <div className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                    <div className="w-full bg-indigo-500/20 hover:bg-indigo-500/40 border-t-2 border-indigo-500 rounded-t h-[20%] transition-all"></div>
+                    <span className="text-[8px] text-slate-500 font-mono">SUN</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* TIMELINE LIST */}
+              <div className="space-y-2">
+                {consumptionLogs.map((logItem) => (
+                  <div key={logItem.id} className="bg-slate-900/40 border border-slate-900 rounded-xl p-3 flex justify-between items-center gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-rose-500/10 text-rose-400 rounded-lg">
+                        <Activity className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <span className="font-extrabold text-slate-200 text-xs block">{logItem.feature}</span>
+                        <span className="text-[10px] text-slate-400">{logItem.userEmail} • Ref: <strong className="font-mono text-slate-500">{logItem.reference}</strong></span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-mono font-bold text-rose-400 text-xs block">-{logItem.creditsSpent} credits</span>
+                      <span className="text-[9px] text-slate-500 font-mono">{logItem.date}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ==========================================
+              TAB 5: SYSTEM BROADCASTER HUB
+             ========================================== */}
+          {activeSubTab === 'announcements' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-2xl">
+                <h4 className="text-xs uppercase font-extrabold text-indigo-400 tracking-wider">
+                  📢 Global App Banner Announcement controller
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Inject warning alerts, release logs, and scheduled maintenance schedules. This announcement mounts automatically at the very top of all active user frames and persists inside standard cookie storage.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Announcement Editor */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+                  <span className="text-[10px] uppercase font-extrabold text-slate-400 block tracking-wider">Draft Alert Payload</span>
+                  
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold mb-1">Alert Level Urgency</label>
+                    <div className="flex gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-900">
+                      <button
+                        onClick={() => setAnnouncementUrgency('info')}
+                        className={`flex-1 px-3 py-1.5 text-[10px] rounded-lg font-bold transition-all ${announcementUrgency === 'info' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                      >
+                        Info (Blue)
+                      </button>
+                      <button
+                        onClick={() => setAnnouncementUrgency('warning')}
+                        className={`flex-1 px-3 py-1.5 text-[10px] rounded-lg font-bold transition-all ${announcementUrgency === 'warning' ? 'bg-amber-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                      >
+                        Warning (Amber)
+                      </button>
+                      <button
+                        onClick={() => setAnnouncementUrgency('urgent')}
+                        className={`flex-1 px-3 py-1.5 text-[10px] rounded-lg font-bold transition-all ${announcementUrgency === 'urgent' ? 'bg-rose-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                      >
+                        Urgent (Red)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold mb-1">Message Content</label>
+                    <textarea
+                      rows={3}
+                      value={announcementText}
+                      onChange={(e) => setAnnouncementText(e.target.value)}
+                      placeholder="e.g. Flutterwave Nigeria gateway is undergoing standard compliance adjustments. Card transactions will reroute dynamically via backup channels."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handlePublishAnnouncement}
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
+                    >
+                      Publish Broadcast Banner
+                    </button>
+                    <button
+                      onClick={handleClearAnnouncement}
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold text-xs px-4 py-2.5 rounded-xl transition-all"
+                    >
+                      Clear Banner
+                    </button>
+                  </div>
+                </div>
+
+                {/* Real-time Preview Card */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-extrabold text-slate-400 block tracking-wider mb-3">Live Active Preview</span>
+                    
+                    {announcement ? (
+                      <div className="border border-indigo-500/30 rounded-xl overflow-hidden shadow-lg bg-slate-950">
+                        <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 text-white text-[11px] py-2 px-3 font-semibold flex justify-between items-center">
+                          <span>{announcement}</span>
+                        </div>
+                        <div className="p-4 text-xs text-slate-400">
+                          This banner is currently <strong className="text-emerald-400">LIVE</strong> and visible to all clients of the Qodex application in real-time.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="border border-dashed border-slate-800 rounded-xl p-8 text-center text-xs text-slate-500">
+                        No active system-wide broadcast active.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-[10px] text-slate-500 border-t border-slate-950 pt-3">
+                    Broadcasting triggers responsive client websocket simulations and is safe for high-frequency runtime usage.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ==========================================
+              TAB 6: FEATURE PRICING COSTS
+             ========================================== */}
           {activeSubTab === 'pricing' && (
             <div className="space-y-4 animate-fade-in">
-              <div className="flex items-center gap-2 bg-indigo-500/5 border border-indigo-500/10 p-3 rounded-2xl">
-                <AlertCircle className="h-4 w-4 text-indigo-400 shrink-0" />
-                <p className="text-[11px] text-slate-400">
-                  Feature consumption pricing is stored in database schema equivalents. Updates take effect immediately for standard/dynamic campaigns, watermark removals, and format exports.
+              <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-2xl">
+                <span className="text-xs uppercase font-extrabold text-slate-400 tracking-wider">Configure Micro-Billing Policies</span>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Set wallet credit deduction costs triggered by dynamic campaign actions. Changes apply globally.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {featurePricing.map((item) => (
-                  <div key={item.id} className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between gap-4">
-                    <div className="space-y-1">
-                      <span className="text-xs font-bold text-slate-200 block">{item.featureName}</span>
-                      <p className="text-[10px] text-slate-400 leading-normal">{item.description}</p>
+                  <div key={item.id} className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex justify-between items-center gap-4 hover:border-slate-700 transition-all">
+                    <div>
+                      <span className="text-xs font-extrabold text-slate-200">{item.featureName}</span>
+                      <p className="text-[10px] text-slate-500 mt-1 max-w-xs">{item.description}</p>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2">
                       {editingFeatureId === item.id ? (
-                        <div className="flex items-center gap-1.5">
+                        <>
                           <input
                             type="number"
-                            min={0}
-                            max={50}
                             value={editingCost}
                             onChange={(e) => setEditingCost(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                            className="w-16 bg-slate-950 border border-slate-700 rounded-lg text-center py-1 text-xs text-indigo-300 font-mono font-bold"
+                            className="w-16 bg-slate-950 border border-indigo-500/50 rounded px-2 py-1 text-xs text-slate-200 font-mono text-center font-bold"
+                            focus-id={`cost-edit-${item.id}`}
                           />
                           <button
                             onClick={() => handleSaveFeaturePricing(item.id)}
-                            className="bg-emerald-500 text-slate-950 p-1.5 rounded-lg font-bold"
+                            className="bg-emerald-500 text-slate-950 p-1.5 rounded hover:bg-emerald-400"
                             title="Save"
                           >
                             <Check className="h-3.5 w-3.5" />
                           </button>
                           <button
                             onClick={() => setEditingFeatureId(null)}
-                            className="bg-slate-800 text-slate-400 p-1.5 rounded-lg"
+                            className="bg-slate-800 text-slate-400 p-1.5 rounded hover:text-slate-100"
                             title="Cancel"
                           >
                             <X className="h-3.5 w-3.5" />
                           </button>
-                        </div>
+                        </>
                       ) : (
-                        <div className="flex items-center gap-3">
-                          <div className="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl text-center min-w-[70px]">
-                            <span className="text-xs font-black text-emerald-400 font-mono">{item.creditsCost}</span>
-                            <span className="text-[9px] text-slate-500 font-bold block">Credits</span>
+                        <>
+                          <div className="bg-slate-950 border border-slate-900 px-3 py-1.5 rounded-xl text-center">
+                            <span className="font-mono font-extrabold text-sm text-indigo-400">{item.creditsCost}</span>
+                            <span className="text-[9px] text-slate-500 block">credits</span>
                           </div>
                           <button
                             onClick={() => {
                               setEditingFeatureId(item.id);
                               setEditingCost(item.creditsCost);
                             }}
-                            className="text-slate-400 hover:text-slate-100 p-1.5 bg-slate-800/50 rounded-xl border border-slate-800 transition-colors"
+                            className="bg-slate-950 border border-slate-800 p-2 rounded-xl text-slate-400 hover:text-slate-100"
                             title="Edit cost"
                           >
                             <Edit2 className="h-3.5 w-3.5" />
                           </button>
-                        </div>
+                        </>
                       )}
                     </div>
                   </div>
@@ -967,7 +1616,9 @@ export default function AdminConsole({
             </div>
           )}
 
-          {/* TAB: CREDIT PACKAGES LIST & EDIT */}
+          {/* ==========================================
+              TAB 7: CREDIT PACKAGES LIST & EDIT
+             ========================================== */}
           {activeSubTab === 'packages' && (
             <div className="space-y-6 animate-fade-in">
               {isEditingPack === null ? (
@@ -1121,7 +1772,7 @@ export default function AdminConsole({
                     </div>
                   </div>
 
-                  {/* PACKAGE FEATURE POINTS */}
+                  {/* PACKAGE BENEFIT POINTS */}
                   <div className="space-y-2">
                     <span className="block text-[10px] text-slate-400 font-bold">Package Benefit Points list</span>
                     <div className="flex gap-2">
@@ -1174,6 +1825,251 @@ export default function AdminConsole({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ==========================================
+              TAB 8: APP SYSTEM SETTINGS
+             ========================================== */}
+          {activeSubTab === 'settings' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-2xl">
+                <span className="text-xs uppercase font-extrabold text-slate-400 tracking-wider">Operational App Settings</span>
+                <p className="text-[11px] text-slate-400 mt-0.5">Toggle maintenance mode blockades and standard threshold limits.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+                  <span className="text-[10px] uppercase font-extrabold text-slate-400 block tracking-wider">Security &amp; Gatekeeping</span>
+                  
+                  <div className="flex justify-between items-center bg-slate-950 p-3 rounded-xl">
+                    <div>
+                      <span className="text-xs font-bold text-slate-200 block">System Maintenance Mode</span>
+                      <p className="text-[10px] text-slate-500">Block core QR editing pipelines temporarily</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSysConfig({ ...sysConfig, maintenanceMode: !sysConfig.maintenanceMode });
+                        showToast(`Maintenance mode ${!sysConfig.maintenanceMode ? 'ENABLED' : 'DISABLED'}`, 'info');
+                      }}
+                      className="text-indigo-400"
+                    >
+                      {sysConfig.maintenanceMode ? (
+                        <ToggleRight className="h-7 w-7 text-rose-500" />
+                      ) : (
+                        <ToggleLeft className="h-7 w-7 text-slate-600" />
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="flex justify-between items-center bg-slate-950 p-3 rounded-xl">
+                    <div>
+                      <span className="text-xs font-bold text-slate-200 block">Lock Guest Registration</span>
+                      <p className="text-[10px] text-slate-500">Only authorized white-labeled emails can join</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSysConfig({ ...sysConfig, disableRegistration: !sysConfig.disableRegistration });
+                        showToast(`Guest Registration lock toggled.`, 'info');
+                      }}
+                      className="text-indigo-400"
+                    >
+                      {sysConfig.disableRegistration ? (
+                        <ToggleRight className="h-7 w-7 text-rose-500" />
+                      ) : (
+                        <ToggleLeft className="h-7 w-7 text-slate-600" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+                  <span className="text-[10px] uppercase font-extrabold text-slate-400 block tracking-wider">Limits &amp; Schedules</span>
+                  
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold mb-1">Standard API Ingestion limit ({sysConfig.apiRateLimit} req/min)</label>
+                    <input
+                      type="range"
+                      min={30}
+                      max={500}
+                      value={sysConfig.apiRateLimit}
+                      onChange={(e) => setSysConfig({ ...sysConfig, apiRateLimit: parseInt(e.target.value, 10) })}
+                      className="w-full accent-indigo-500 bg-slate-950 rounded-lg appearance-none h-1.5"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold mb-1">Platform DB Automated Backups</label>
+                    <select
+                      value={sysConfig.dbBackupSchedule}
+                      onChange={(e) => setSysConfig({ ...sysConfig, dbBackupSchedule: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-800 text-xs text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="Hourly">Hourly Incremental Backup (Amazon S3 GLOW)</option>
+                      <option value="Daily">Daily Snapshot Sync (GCP Coldline)</option>
+                      <option value="Weekly">Weekly Cold-Vault Archive (Supabase Internal)</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => showToast('Operational thresholds updated successfully!', 'success')}
+                    className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs py-2 rounded-xl transition-all shadow"
+                  >
+                    Save App Operational Limits
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ==========================================
+              TAB 9: SUPABASE DATABASE EXPLORER
+             ========================================== */}
+          {activeSubTab === 'supabase' && (
+            <div className="space-y-6">
+              
+              {/* TRANSACTION WORKFLOW SIMULATOR */}
+              <div className="bg-slate-900/40 border border-slate-900 rounded-2xl p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                  <div>
+                    <h4 className="text-xs uppercase font-extrabold text-indigo-400 flex items-center gap-1.5 tracking-wider">
+                      <Terminal className="h-4 w-4" /> Postgres Atomic Wallet Transaction Simulator
+                    </h4>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      See how Row Level Security (RLS) is validated and how race conditions are prevented during credit deductions using Postgres transaction locking.
+                    </p>
+                  </div>
+                  
+                  {/* SCENARIO PICKER */}
+                  <div className="flex gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-900 self-stretch sm:self-auto">
+                    <button
+                      onClick={() => setSimScenario('deduction')}
+                      className={`px-3 py-1 text-[10px] rounded-lg font-bold transition-all flex-1 sm:flex-initial ${simScenario === 'deduction' ? 'bg-indigo-600 text-slate-50' : 'text-slate-500 hover:text-slate-300'}`}
+                    >
+                      Usage Deduction
+                    </button>
+                    <button
+                      onClick={() => setSimScenario('purchase')}
+                      className={`px-3 py-1 text-[10px] rounded-lg font-bold transition-all flex-1 sm:flex-initial ${simScenario === 'purchase' ? 'bg-indigo-600 text-slate-50' : 'text-slate-500 hover:text-slate-300'}`}
+                    >
+                      Credit Purchase
+                    </button>
+                    <button
+                      onClick={() => setSimScenario('race_condition')}
+                      className={`px-3 py-1 text-[10px] rounded-lg font-bold transition-all flex-1 sm:flex-initial ${simScenario === 'race_condition' ? 'bg-indigo-600 text-slate-50' : 'text-slate-500 hover:text-slate-300'}`}
+                    >
+                      Prevent Race Condition
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                  {/* LEFT SIM CONTROL */}
+                  <div className="md:col-span-2 bg-slate-950 border border-slate-900 p-4 rounded-xl flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      <span className="text-[9px] uppercase font-bold text-indigo-400 tracking-wider">Active Scenario Target</span>
+                      <h5 className="text-xs font-bold text-slate-200">
+                        {simScenario === 'deduction' && 'Subtract credits safely via row locking'}
+                        {simScenario === 'purchase' && 'Flutterwave payment callback credit injection'}
+                        {simScenario === 'race_condition' && 'Dual concurrency race condition lock conflict'}
+                      </h5>
+                      <p className="text-[10px] text-slate-400 leading-relaxed">
+                        {simScenario === 'deduction' && 'A user updates a dynamic short-link. We run a SELECT FOR UPDATE statement to lock the client’s wallet row first, ensuring that another concurrent task doesn\'t result in double-spending or negative wallet states.'}
+                        {simScenario === 'purchase' && 'Inflow API triggers webhook credit replenishment. Balance is locking-updated safely to reflect a newly verified cash transaction ledger item.'}
+                        {simScenario === 'race_condition' && 'Triggers two competing virtual servers updating the exact same credit wallet simultaneously. Standard transactions block each other correctly in a serial line.'}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={runTransactionSimulation}
+                      disabled={isSimulating}
+                      className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 text-slate-50 font-bold text-xs py-2 rounded-lg flex items-center justify-center gap-1.5"
+                    >
+                      {isSimulating ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" /> SIMULATING WORKFLOW...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-3.5 w-3.5" /> Execute Postgres Query
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* RIGHT TERMINAL SCREEN */}
+                  <div className="md:col-span-3 bg-slate-950 rounded-xl p-4 border border-slate-900 font-mono text-[11px] text-slate-300 space-y-2 relative shadow-inner">
+                    <div className="absolute top-2.5 right-3 flex items-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="text-[8px] text-slate-500 tracking-wider">LOCAL REPLICA LIVE</span>
+                    </div>
+                    
+                    <div className="text-[10px] text-indigo-500 border-b border-slate-900 pb-1.5 font-bold uppercase tracking-widest">
+                      Postgres Transaction logs output
+                    </div>
+
+                    <div className="space-y-1 overflow-y-auto max-h-40 pr-2">
+                      {terminalLogs.map((logLine, index) => (
+                        <p key={index} className={logLine.includes('committed') || logLine.includes('committed') || logLine.includes('committed') ? 'text-emerald-400' : logLine.includes('⚡') ? 'text-indigo-400' : 'text-slate-300'}>
+                          {logLine}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* TABLE CONFIGS LIST & SCHEMAS */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                {/* Tables List */}
+                <div className="bg-slate-900/30 border border-slate-900 rounded-2xl p-4">
+                  <span className="block text-[10px] uppercase font-extrabold tracking-wider text-slate-500 mb-2 px-1">Supabase DB Tables index</span>
+                  <div className="space-y-1">
+                    {SUPABASE_SCHEMA_TABLES.map((tbl) => (
+                      <button
+                        key={tbl.name}
+                        onClick={() => setSelectedTableName(tbl.name)}
+                        className={`w-full text-left p-2 rounded-xl transition-all border flex items-center justify-between ${selectedTableName === tbl.name ? 'bg-indigo-600/10 border-indigo-500/30 text-indigo-400 font-bold' : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200'}`}
+                      >
+                        <span className="text-xs truncate">table {tbl.name}</span>
+                        <ChevronRight className="h-3 w-3 opacity-60" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* SQL Code details */}
+                <div className="md:col-span-3 bg-slate-900/30 border border-slate-900 rounded-2xl p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-900 pb-3">
+                    <div>
+                      <h5 className="text-xs font-bold text-slate-200 font-mono">table {selectedTable.name}</h5>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{selectedTable.description}</p>
+                    </div>
+
+                    {/* DDL vs RLS Toggle */}
+                    <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-900 self-stretch sm:self-auto text-[10px]">
+                      <button
+                        onClick={() => setShowDdlType('ddl')}
+                        className={`px-3 py-1 rounded-lg font-bold transition-all ${showDdlType === 'ddl' ? 'bg-indigo-600/15 text-indigo-400 border border-indigo-500/20' : 'text-slate-500 hover:text-slate-300'}`}
+                      >
+                        Table DDL Schema
+                      </button>
+                      <button
+                        onClick={() => setShowDdlType('rls')}
+                        className={`px-3 py-1 rounded-lg font-bold transition-all ${showDdlType === 'rls' ? 'bg-indigo-600/15 text-indigo-400 border border-indigo-500/20' : 'text-slate-500 hover:text-slate-300'}`}
+                      >
+                        Row-Level Security Policies (RLS)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-900 p-4">
+                    <pre className="text-[10px] text-slate-300 overflow-x-auto font-mono leading-relaxed whitespace-pre font-medium">
+                      {showDdlType === 'ddl' ? selectedTable.ddl : selectedTable.rls}
+                    </pre>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>

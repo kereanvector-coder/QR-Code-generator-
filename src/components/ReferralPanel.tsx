@@ -245,7 +245,7 @@ export default function ReferralPanel({
       </div>
 
       {/* STATS COUNT GRID */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
           { label: 'Total Signups Referrals', value: referralStats.totalReferrals, color: 'text-indigo-400' },
           { label: 'Successful Purchases', value: referralStats.successfulPurchases, color: 'text-emerald-400' },
@@ -323,7 +323,7 @@ export default function ReferralPanel({
 
             {/* SIMULATOR INPUT FIELDS */}
             <div className="bg-slate-900/60 border border-slate-850 p-4 rounded-2xl space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1">Referee Name</label>
                   <input
@@ -346,7 +346,7 @@ export default function ReferralPanel({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1 flex items-center gap-1">
                     <Globe className="h-3 w-3 text-indigo-400" /> IP Address

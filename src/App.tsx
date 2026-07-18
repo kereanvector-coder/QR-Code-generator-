@@ -49,9 +49,12 @@ import AdminConsole from './components/AdminConsole';
 import TeamWorkspacePanel from './components/TeamWorkspacePanel';
 import ReferralPanel from './components/ReferralPanel';
 import CompliancePanel from './components/CompliancePanel';
+import SEOPanel from './components/SEOPanel';
+import SecurityPerfPanel from './components/SecurityPerfPanel';
 import PaymentSandbox from './components/PaymentSandbox';
 import AuthPanel from './components/AuthPanel';
 import QRScannerModal from './components/QRScannerModal';
+import LandingPage from './components/LandingPage';
 
 // Preset logos
 const LOGO_PRESETS = [
@@ -357,6 +360,10 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [announcement, setAnnouncement] = useState<string | null>(() => {
+    return localStorage.getItem('qodex_broadcast_announcement') || null;
+  });
+
   // Sync state to local storage on change
   useEffect(() => {
     if (currentUser) {
@@ -519,7 +526,8 @@ export default function App() {
   // ==========================================
   // NAVIGATION & UI STATE
   // ==========================================
-  const [activeTab, setActiveTab] = useState<'studio' | 'campaigns' | 'templates' | 'wallet' | 'team' | 'referral' | 'compliance'>('studio');
+  const [showLandingPage, setShowLandingPage] = useState(true);
+  const [activeTab, setActiveTab] = useState<'studio' | 'campaigns' | 'templates' | 'wallet' | 'team' | 'referral' | 'compliance' | 'seo' | 'secperf'>('studio');
   const [currency, setCurrency] = useState<'NGN' | 'KES' | 'USD'>('NGN');
   const [detectedCountry, setDetectedCountry] = useState<string>('Detecting via IP...');
 
@@ -647,6 +655,13 @@ export default function App() {
   const [logoSize, setLogoSize] = useState<number>(16);
   const [errorCorrection, setErrorCorrection] = useState<'L' | 'M' | 'Q' | 'H'>('H');
   const [tempLogoInput, setTempLogoInput] = useState('');
+  
+  // Custom Frame & Independent Pupil states
+  const [frameType, setFrameType] = useState<'none' | 'card' | 'bubble' | 'tag' | 'minimal'>('none');
+  const [frameText, setFrameText] = useState('SCAN ME');
+  const [frameColor, setFrameColor] = useState('#10b981');
+  const [frameTextColor, setFrameTextColor] = useState('#ffffff');
+  const [pupilType, setPupilType] = useState<'square' | 'rounded' | 'circle' | 'star'>('rounded');
 
   // Remove watermark toggle (Consumes 1 credit to unlock the current preview permanently)
   const [isUnlockedPreview, setIsUnlockedPreview] = useState(false);
@@ -870,7 +885,20 @@ export default function App() {
     try {
       const qr = QRCode.create(textPayload, { errorCorrectionLevel: options.errorCorrectionLevel });
       const numModules = qr.modules.size;
-      const moduleSize = canvas.width / numModules;
+      
+      // Calculate QR dimensions and offsets based on frame
+      let qrPadding = 0;
+      let qrBottomExtra = 0;
+      if (options.frameType && options.frameType !== 'none') {
+        qrPadding = 24;
+        qrBottomExtra = 64;
+      }
+      
+      const qrSize = Math.min(canvas.width - qrPadding * 2, canvas.height - qrPadding - qrBottomExtra);
+      const xOffset = (canvas.width - qrSize) / 2;
+      const yOffset = qrPadding;
+      
+      const moduleSize = qrSize / numModules;
 
       // Define whether modules belong to the 3 finder eyes
       const isEye = (row: number, col: number) => {
@@ -883,7 +911,7 @@ export default function App() {
       // Set fill style or gradient
       let fillStyle: string | CanvasGradient = options.fgColor;
       if (options.gradientEnabled) {
-        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        const gradient = ctx.createLinearGradient(xOffset, yOffset, xOffset + qrSize, yOffset + qrSize);
         gradient.addColorStop(0, options.fgColor);
         gradient.addColorStop(1, options.gradientColor);
         fillStyle = gradient;
@@ -891,7 +919,7 @@ export default function App() {
       
       let bodyFillStyle: string | CanvasGradient = (options.customColorsEnabled && options.bodyColor) ? options.bodyColor : options.fgColor;
       if (options.gradientEnabled) {
-        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        const gradient = ctx.createLinearGradient(xOffset, yOffset, xOffset + qrSize, yOffset + qrSize);
         gradient.addColorStop(0, (options.customColorsEnabled && options.bodyColor) ? options.bodyColor : options.fgColor);
         gradient.addColorStop(1, options.gradientColor);
         bodyFillStyle = gradient;
@@ -914,8 +942,8 @@ export default function App() {
           }
 
           if (qr.modules.get(row, col)) {
-            const x = col * moduleSize;
-            const y = row * moduleSize;
+            const x = xOffset + col * moduleSize;
+            const y = yOffset + row * moduleSize;
 
             ctx.fillStyle = bodyFillStyle;
             if (options.dotType === 'dots') {
@@ -975,11 +1003,38 @@ export default function App() {
         const px = ox + moduleSize * 2;
         const py = oy + moduleSize * 2;
 
-        if (options.eyeType === 'rounded') {
+        const currentPupilType = options.pupilType || options.eyeType;
+
+        if (currentPupilType === 'rounded') {
           const pr = pupilSize * 0.25;
           ctx.roundRect(px, py, pupilSize, pupilSize, pr);
-        } else if (options.eyeType === 'circle' || options.eyeType === 'leaf') {
+        } else if (currentPupilType === 'circle' || currentPupilType === 'leaf') {
           ctx.arc(px + pupilSize / 2, py + pupilSize / 2, pupilSize / 2, 0, 2 * Math.PI);
+        } else if (currentPupilType === 'star') {
+          const cx = px + pupilSize / 2;
+          const cy = py + pupilSize / 2;
+          let rot = (Math.PI / 2) * 3;
+          let sx = cx;
+          let sy = cy;
+          const spikes = 5;
+          const outerRadius = pupilSize / 2;
+          const innerRadius = pupilSize / 4;
+          const step = Math.PI / spikes;
+
+          ctx.moveTo(cx, cy - outerRadius);
+          for (let i = 0; i < spikes; i++) {
+            sx = cx + Math.cos(rot) * outerRadius;
+            sy = cy + Math.sin(rot) * outerRadius;
+            ctx.lineTo(sx, sy);
+            rot += step;
+
+            sx = cx + Math.cos(rot) * innerRadius;
+            sy = cy + Math.sin(rot) * innerRadius;
+            ctx.lineTo(sx, sy);
+            rot += step;
+          }
+          ctx.lineTo(cx, cy - outerRadius);
+          ctx.closePath();
         } else {
           ctx.rect(px, py, pupilSize, pupilSize);
         }
@@ -988,9 +1043,9 @@ export default function App() {
       };
 
       // Draw the three finder patterns
-      drawEyeBorderAndPupil(0, 0); // Top-Left
-      drawEyeBorderAndPupil((numModules - 7) * moduleSize, 0); // Top-Right
-      drawEyeBorderAndPupil(0, (numModules - 7) * moduleSize); // Bottom-Left
+      drawEyeBorderAndPupil(xOffset, yOffset); // Top-Left
+      drawEyeBorderAndPupil(xOffset + (numModules - 7) * moduleSize, yOffset); // Top-Right
+      drawEyeBorderAndPupil(xOffset, yOffset + (numModules - 7) * moduleSize); // Bottom-Left
 
       // Draw Center Logo overlay if requested
       if (options.logoUrl) {
@@ -998,17 +1053,21 @@ export default function App() {
         img.src = options.logoUrl;
         img.crossOrigin = 'anonymous'; // avoid tainted canvas issues
         img.onload = () => {
-          const logoPixelSize = canvas.width * (options.logoSize / 100);
-          const lx = (canvas.width - logoPixelSize) / 2;
-          const ly = (canvas.height - logoPixelSize) / 2;
+          const logoPixelSize = qrSize * (options.logoSize / 100);
+          const centerX = xOffset + qrSize / 2;
+          const centerY = yOffset + qrSize / 2;
+          const lx = centerX - logoPixelSize / 2;
+          const ly = centerY - logoPixelSize / 2;
 
           // Draw protective circle behind logo to mask standard grid lines
           ctx.fillStyle = options.bgColor;
           ctx.beginPath();
-          ctx.arc(canvas.width / 2, canvas.height / 2, logoPixelSize / 2 + 6, 0, 2 * Math.PI);
+          ctx.arc(centerX, centerY, logoPixelSize / 2 + 6, 0, 2 * Math.PI);
           ctx.fill();
 
           ctx.drawImage(img, lx, ly, logoPixelSize, logoPixelSize);
+
+          drawFrameOnCanvas(ctx, canvas, options);
 
           if (withWatermark) {
             drawWatermark(ctx, canvas);
@@ -1016,11 +1075,13 @@ export default function App() {
         };
         // Handle image load error gracefully
         img.onerror = () => {
+          drawFrameOnCanvas(ctx, canvas, options);
           if (withWatermark) {
             drawWatermark(ctx, canvas);
           }
         };
       } else {
+        drawFrameOnCanvas(ctx, canvas, options);
         if (withWatermark) {
           drawWatermark(ctx, canvas);
         }
@@ -1029,6 +1090,132 @@ export default function App() {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const drawFrameOnCanvas = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, options: QRStyle) => {
+    if (!options.frameType || options.frameType === 'none') return;
+    
+    const frameColor = options.frameColor || '#10b981';
+    const textColor = options.frameTextColor || '#ffffff';
+    const frameText = options.frameText || 'SCAN ME';
+    
+    ctx.save();
+    
+    if (options.frameType === 'card') {
+      // Draw card frame outline around canvas with rounded corners
+      ctx.strokeStyle = frameColor;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.roundRect(10, 10, canvas.width - 20, canvas.height - 20, 24);
+      ctx.stroke();
+      
+      // Draw filled banner at the bottom for frame text
+      ctx.fillStyle = frameColor;
+      ctx.beginPath();
+      ctx.roundRect(16, canvas.height - 58, canvas.width - 32, 42, 12);
+      ctx.fill();
+      
+      // Draw frame text
+      ctx.fillStyle = textColor;
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(frameText.toUpperCase(), canvas.width / 2, canvas.height - 37);
+      
+    } else if (options.frameType === 'bubble') {
+      // Draw speech bubble outline
+      ctx.strokeStyle = frameColor;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.roundRect(12, 12, canvas.width - 24, canvas.height - 72, 16);
+      ctx.stroke();
+      
+      // Bubble tail pointing up to QR code
+      ctx.fillStyle = frameColor;
+      ctx.beginPath();
+      ctx.moveTo(canvas.width / 2 - 12, canvas.height - 72);
+      ctx.lineTo(canvas.width / 2 + 12, canvas.height - 72);
+      ctx.lineTo(canvas.width / 2, canvas.height - 60);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Filled capsule bubble at bottom
+      ctx.beginPath();
+      ctx.roundRect(24, canvas.height - 58, canvas.width - 48, 38, 19);
+      ctx.fill();
+      
+      ctx.fillStyle = textColor;
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(frameText.toUpperCase(), canvas.width / 2, canvas.height - 39);
+      
+    } else if (options.frameType === 'tag') {
+      // Hang tag visual indicator at top
+      ctx.fillStyle = '#475569';
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, 14, 4, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      ctx.strokeStyle = frameColor;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.roundRect(12, 18, canvas.width - 24, canvas.height - 32, 12);
+      ctx.stroke();
+      
+      // Draw footer block
+      ctx.fillStyle = frameColor;
+      ctx.fillRect(14, canvas.height - 52, canvas.width - 28, 32);
+      
+      ctx.fillStyle = textColor;
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(frameText, canvas.width / 2, canvas.height - 36);
+      
+    } else if (options.frameType === 'minimal') {
+      // Elegant bracket style
+      ctx.strokeStyle = frameColor;
+      ctx.lineWidth = 4;
+      const len = 20;
+      
+      // Top-Left bracket
+      ctx.beginPath();
+      ctx.moveTo(14, 14 + len);
+      ctx.lineTo(14, 14);
+      ctx.lineTo(14 + len, 14);
+      ctx.stroke();
+      
+      // Top-Right bracket
+      ctx.beginPath();
+      ctx.moveTo(canvas.width - 14, 14 + len);
+      ctx.lineTo(canvas.width - 14, 14);
+      ctx.lineTo(canvas.width - 14 - len, 14);
+      ctx.stroke();
+      
+      // Bottom-Left bracket
+      ctx.beginPath();
+      ctx.moveTo(14, canvas.height - 52 - len);
+      ctx.lineTo(14, canvas.height - 52);
+      ctx.lineTo(14 + len, canvas.height - 52);
+      ctx.stroke();
+      
+      // Bottom-Right bracket
+      ctx.beginPath();
+      ctx.moveTo(canvas.width - 14, canvas.height - 52 - len);
+      ctx.lineTo(canvas.width - 14, canvas.height - 52);
+      ctx.lineTo(canvas.width - 14 - len, canvas.height - 52);
+      ctx.stroke();
+      
+      // Label text at bottom
+      ctx.fillStyle = frameColor;
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`[ ${frameText.toUpperCase()} ]`, canvas.width / 2, canvas.height - 24);
+    }
+    
+    ctx.restore();
   };
 
   const drawWatermark = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
@@ -1094,6 +1281,48 @@ export default function App() {
     setErrorCorrection(preset.style.errorCorrectionLevel);
     setCampaignName(`Preset: ${preset.name}`);
     showToast(`Applied preset styles for: ${preset.name}`, 'info');
+  };
+
+  const handleLoadSEOPreset = (preset: {
+    name: string;
+    type: string;
+    bodyColor: string;
+    eyeBorderColor: string;
+    eyePupilColor: string;
+    dotType: 'square' | 'dots' | 'rounded' | 'liquid';
+    eyeType: 'square' | 'rounded' | 'circle' | 'leaf';
+    logoSize: number;
+    errorCorrection: 'L' | 'M' | 'Q' | 'H';
+  }) => {
+    setCampaignName(preset.name);
+    setQrType(preset.type);
+    
+    // Auto-setup specific content based on SEO route
+    if (preset.type === 'wifi') {
+      setWifiSsid('Qodex_SEO_Demo');
+      setWifiPass('SecureWiFiPass2026');
+      setWifiSec('WPA');
+    } else if (preset.type === 'url') {
+      setInputUrl('https://qodex.io/seo-target');
+    } else if (preset.type === 'vcard') {
+      setVcardName('Bistro Executive');
+      setVcardPhone('+234 801 234 5678');
+      setVcardEmail('executive@qodex.io');
+      setVcardOrg('Qodex Gourmet Foods');
+    } else if (preset.type === 'social') {
+      setGenericSocialUser('qodex_social');
+    }
+
+    setBodyColor(preset.bodyColor);
+    setEyeBorderColor(preset.eyeBorderColor);
+    setEyePupilColor(preset.eyePupilColor);
+    setDotType(preset.dotType);
+    setEyeType(preset.eyeType);
+    setLogoSize(preset.logoSize);
+    setErrorCorrection(preset.errorCorrection);
+    setCustomColorsEnabled(true);
+    setActiveTab('studio');
+    showToast(`Loaded ${preset.name} SEO configuration into Design Studio!`, 'success');
   };
 
   // Consume credits to remove preview watermark permanently based on current config
@@ -1604,9 +1833,35 @@ export default function App() {
     }, 1800);
   };
 
+  if (showLandingPage) {
+    return <LandingPage onLaunchApp={() => setShowLandingPage(false)} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#080d1a] text-slate-100 font-sans antialiased selection:bg-emerald-500 selection:text-slate-900 pb-16">
       
+      {/* BROADCAST ANNOUNCEMENT BANNER */}
+      {announcement && (
+        <div id="broadcast-announcement-banner" className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-indigo-800 text-white text-xs py-2.5 px-6 font-bold flex justify-between items-center z-50 sticky top-0 border-b border-indigo-500/30 shadow-lg backdrop-blur-md">
+          <div className="flex items-center gap-2 mx-auto">
+            <span className="bg-white/10 text-white border border-white/20 text-[9px] uppercase font-extrabold tracking-widest px-2 py-0.5 rounded">
+              📢 BROADCAST
+            </span>
+            <span className="font-semibold tracking-wide text-indigo-100">{announcement}</span>
+          </div>
+          <button 
+            onClick={() => {
+              setAnnouncement(null);
+              localStorage.removeItem('qodex_broadcast_announcement');
+            }} 
+            className="text-white hover:text-indigo-200 transition-colors font-extrabold text-sm ml-4 p-1 rounded-lg hover:bg-white/5"
+            aria-label="Dismiss Announcement"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* GLOBAL TOAST NOTIFICATION */}
       {toast && (
         <div id="toast-notification" className="fixed top-6 right-6 z-50 flex items-center gap-3 bg-slate-900 border border-slate-800 px-5 py-4 rounded-xl shadow-2xl animate-fade-in-down max-w-sm">
@@ -1620,31 +1875,38 @@ export default function App() {
       )}
 
       {/* HEADER NAVBAR */}
-      <header id="qodex-header" className="sticky top-0 z-40 bg-[#080d1a]/85 backdrop-blur-md border-b border-slate-900 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-tr from-emerald-500 to-indigo-600 p-2.5 rounded-xl text-slate-900 font-bold shadow-lg shadow-emerald-500/10 flex items-center justify-center">
-            <QrCode className="h-6 w-6 text-white" />
+      <header id="qodex-header" className="sticky top-0 z-40 bg-[#080d1a]/85 backdrop-blur-md border-b border-slate-900 px-4 py-3 sm:px-6 sm:py-4 flex flex-col xs:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-3 self-start xs:self-auto">
+          <div className="bg-gradient-to-tr from-emerald-500 to-indigo-600 p-2 sm:p-2.5 rounded-xl text-slate-900 font-bold shadow-lg shadow-emerald-500/10 flex items-center justify-center">
+            <QrCode className="h-5 sm:h-6 w-5 sm:w-6 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 via-teal-300 to-indigo-400 bg-clip-text text-transparent">Qodex</span>
-              <span className="text-[10px] uppercase font-bold tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded">NG/AFRICA</span>
+              <span className="text-lg sm:text-xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 via-teal-300 to-indigo-400 bg-clip-text text-transparent">Qodex</span>
+              <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded hidden xs:inline-block">NG/AFRICA</span>
+              <button 
+                onClick={() => setShowLandingPage(true)}
+                className="text-[9px] sm:text-[10px] uppercase font-mono font-bold text-emerald-400 hover:text-emerald-300 transition-colors border border-emerald-500/30 px-2 py-0.5 rounded bg-emerald-500/5 cursor-pointer ml-1"
+                title="Return to public landing page"
+              >
+                ← Landing Page
+              </button>
             </div>
-            <p className="text-[10px] text-slate-500">Pay-As-You-Go Smart QR Codes</p>
+            <p className="text-[9px] sm:text-[10px] text-slate-500 hidden sm:block">Pay-As-You-Go Smart QR Codes</p>
           </div>
         </div>
 
         {/* TOP METRICS & WALLET BALANCES */}
-        <div className="flex items-center gap-4">
-          <div className="bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-2 flex items-center gap-3">
-            <div className="bg-indigo-500/10 p-1.5 rounded-lg">
-              <Wallet className="h-4 w-4 text-indigo-400" />
+        <div className="flex items-center gap-2 sm:gap-4 w-full xs:w-auto justify-between xs:justify-end">
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl px-2.5 py-1.5 sm:px-4 sm:py-2 flex items-center gap-2 sm:gap-3">
+            <div className="bg-indigo-500/10 p-1 sm:p-1.5 rounded-lg shrink-0">
+              <Wallet className="h-3.5 sm:h-4 w-3.5 sm:w-4 text-indigo-400" />
             </div>
             <div>
-              <p className="text-[10px] text-slate-400 font-medium">AVAILABLE BALANCE</p>
-              <div className="flex items-center gap-1.5">
-                <span className="text-base font-extrabold text-indigo-300">{credits}</span>
-                <span className="text-[10px] text-slate-500 font-bold">Credits</span>
+              <p className="text-[8px] sm:text-[10px] text-slate-400 font-medium hidden xs:block">AVAILABLE BALANCE</p>
+              <div className="flex items-center gap-1 sm:gap-1.5">
+                <span className="text-sm sm:text-base font-extrabold text-indigo-300">{credits}</span>
+                <span className="text-[8px] sm:text-[10px] text-slate-500 font-bold">Credits</span>
               </div>
             </div>
           </div>
@@ -1652,7 +1914,7 @@ export default function App() {
           <button 
             id="header-fund-wallet"
             onClick={() => { setActiveTab('wallet'); }} 
-            className="hidden sm:flex bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 hover:from-emerald-400 hover:to-teal-500 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-500/10 items-center gap-1.5"
+            className="hidden sm:flex bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 hover:from-emerald-400 hover:to-teal-500 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-500/10 items-center gap-1.5 shrink-0"
           >
             <Plus className="h-4 w-4" /> Fund Wallet
           </button>
@@ -1660,22 +1922,22 @@ export default function App() {
           <button 
             id="header-qr-scanner"
             onClick={() => { setIsScannerOpen(true); }} 
-            className="flex bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 px-4 py-2 rounded-xl text-xs font-bold transition-all items-center gap-1.5"
+            className="flex bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-bold transition-all items-center gap-1.5 shrink-0"
             title="Scan & verify dynamic QR codes using device camera"
           >
             <Camera className="h-4 w-4 text-emerald-400" />
-            <span>In-App Scanner</span>
+            <span className="hidden md:inline">In-App Scanner</span>
           </button>
 
           {currentUser && (
-            <div className="flex items-center gap-3 border-l border-slate-800/80 pl-3">
+            <div className="flex items-center gap-2 sm:gap-3 border-l border-slate-800/80 pl-2 sm:pl-3 shrink-0">
               <div className="text-right hidden md:block">
                 <span className="block text-xs font-bold text-slate-200">{currentUser.name}</span>
                 <span className="block text-[8px] font-black text-indigo-400 uppercase tracking-widest">{currentUser.role}</span>
               </div>
               <button
                 onClick={handleLogout}
-                className="bg-slate-900 hover:bg-rose-950/30 text-slate-400 hover:text-rose-400 border border-slate-800 px-3 py-2 rounded-xl text-xs font-bold transition-all"
+                className="bg-slate-900 hover:bg-rose-950/30 text-slate-400 hover:text-rose-400 border border-slate-800 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-bold transition-all"
                 title="Sign out of current workspace account"
               >
                 Log Out
@@ -1771,6 +2033,22 @@ export default function App() {
           >
             <ShieldCheck className="h-4 w-4" />
             ⚖️ Privacy &amp; Compliance
+          </button>
+          <button
+            id="tab-btn-seo"
+            onClick={() => setActiveTab('seo')}
+            className={`flex items-center gap-2 px-5 py-3 border-b-2 font-bold text-sm transition-all whitespace-nowrap ${activeTab === 'seo' ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+          >
+            <Globe className="h-4 w-4" />
+            🔍 SEO &amp; Marketing
+          </button>
+          <button
+            id="tab-btn-secperf"
+            onClick={() => setActiveTab('secperf')}
+            className={`flex items-center gap-2 px-5 py-3 border-b-2 font-bold text-sm transition-all whitespace-nowrap ${activeTab === 'secperf' ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+          >
+            <Lock className="h-4 w-4" />
+            🛡️ Security &amp; Perf
           </button>
         </div>
       </div>
@@ -2780,21 +3058,21 @@ export default function App() {
                 </div>
 
                 {/* VISUAL PREVIEW CANVAS CARD */}
-                <div className="relative bg-white p-6 rounded-2xl shadow-xl shadow-slate-950/40 border border-slate-200 mb-6 group">
+                <div className="relative bg-white p-4 sm:p-6 rounded-2xl shadow-xl shadow-slate-950/40 border border-slate-200 mb-6 group max-w-full overflow-hidden flex flex-col items-center justify-center">
                   <canvas
                     ref={canvasRef}
                     width={280}
                     height={280}
-                    className="mx-auto rounded-lg"
+                    className="mx-auto rounded-lg max-w-full h-auto bg-white"
                   />
                   
                   {/* WATERMARK LABEL STATUS AT BOTTOM IN UI */}
                   {!isUnlockedPreview && (
-                    <div className="absolute inset-x-0 bottom-0 bg-slate-950/95 text-[10px] text-center font-semibold text-amber-400 py-1.5 rounded-b-2xl border-t border-slate-900 flex items-center justify-center gap-1">
+                    <div className="absolute inset-x-0 bottom-0 bg-slate-950/95 text-[9px] sm:text-[10px] text-center font-semibold text-amber-400 py-2 sm:py-1.5 rounded-b-2xl border-t border-slate-900 flex flex-col xs:flex-row items-center justify-center gap-1.5 px-2">
                       <span>⚡ Free Export: Branding watermark active.</span>
                       <button
                         onClick={unlockPreviewWatermark}
-                        className="bg-amber-400/10 hover:bg-amber-400 hover:text-slate-950 border border-amber-400/20 text-amber-300 font-extrabold text-[9px] px-2 py-0.5 rounded transition-all ml-1.5 uppercase tracking-wider"
+                        className="bg-amber-400/10 hover:bg-amber-400 hover:text-slate-950 border border-amber-400/20 text-amber-300 font-extrabold text-[9px] px-2 py-0.5 rounded transition-all uppercase tracking-wider"
                       >
                         Remove Branding (1 credit)
                       </button>
@@ -3127,10 +3405,10 @@ export default function App() {
                         <div
                           key={c.id}
                           onClick={() => setSelectedCampaignId(c.id)}
-                          className={`group cursor-pointer bg-slate-950 border rounded-2xl p-4 transition-all flex justify-between items-center ${selectedCampaignId === c.id ? 'border-emerald-500 shadow-md shadow-emerald-500/5' : 'border-slate-900 hover:border-slate-800'}`}
+                          className={`group cursor-pointer bg-slate-950 border rounded-2xl p-4 transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${selectedCampaignId === c.id ? 'border-emerald-500 shadow-md shadow-emerald-500/5' : 'border-slate-900 hover:border-slate-800'}`}
                         >
                           <div className="flex items-center gap-3">
-                            <div className="bg-slate-900 group-hover:bg-slate-850 p-2.5 rounded-xl border border-slate-800 flex items-center justify-center">
+                            <div className="bg-slate-900 group-hover:bg-slate-850 p-2.5 rounded-xl border border-slate-800 flex items-center justify-center shrink-0">
                               <QrCode className={`h-6 w-6 ${selectedCampaignId === c.id ? 'text-emerald-400' : 'text-slate-400'}`} />
                             </div>
                             <div>
@@ -3161,7 +3439,7 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto pt-3 sm:pt-0 border-t border-slate-900 sm:border-t-0" onClick={(e) => e.stopPropagation()}>
                             {/* MOVE TO FOLDER DROPDOWN SELECTOR */}
                             <select
                               value={c.folderId || ''}
@@ -3218,7 +3496,7 @@ export default function App() {
               <div className="lg:col-span-6">
                 {selectedCampaign ? (
                   <div className="bg-slate-950 border border-slate-900 rounded-3xl p-6 space-y-6">
-                    <div className="flex justify-between items-start">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                       <div>
                         <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Active Campaign Details</span>
                         <h3 className="text-lg font-bold text-slate-100">{selectedCampaign.name}</h3>
@@ -3226,7 +3504,7 @@ export default function App() {
                           Short Redirect Target: <span className="font-mono text-emerald-400">{selectedCampaign.shortUrl}</span>
                         </p>
                       </div>
-                      <div className="text-right">
+                      <div className="text-left sm:text-right">
                         <span className="text-2xl font-black text-emerald-400 block">{selectedCampaign.clicks}</span>
                         <span className="text-[9px] uppercase font-bold tracking-wider text-slate-500">Total Scans Recorded</span>
                       </div>
@@ -3580,6 +3858,14 @@ export default function App() {
               showToast={showToast}
               credits={credits}
               setCredits={setCredits}
+              workspaces={workspaces}
+              setWorkspaces={setWorkspaces}
+              currentUser={currentUser}
+              setCurrentUser={setCurrentUser}
+              announcement={announcement}
+              setAnnouncement={setAnnouncement}
+              campaigns={campaigns}
+              setCampaigns={setCampaigns}
               onAddTransaction={(desc, ref, amount, change) => {
                 const newTx: any = {
                   id: `tx-sim-${Date.now()}`,
@@ -3659,6 +3945,30 @@ export default function App() {
               setWorkspaces={setWorkspaces}
               showToast={showToast}
               detectedCountry={detectedCountry}
+            />
+          </div>
+        )}
+
+        {/* ==========================================
+            TAB: SEO & MARKETING HUB
+           ========================================== */}
+        {activeTab === 'seo' && (
+          <div id="panel-seo-container" className="animate-fade-in">
+            <SEOPanel
+              onLoadPreset={handleLoadSEOPreset}
+              showToast={showToast}
+            />
+          </div>
+        )}
+
+        {/* ==========================================
+            TAB: SECURITY & PERFORMANCE CONTROL
+           ========================================== */}
+        {activeTab === 'secperf' && (
+          <div id="panel-secperf-container" className="animate-fade-in">
+            <SecurityPerfPanel
+              campaigns={campaigns}
+              showToast={showToast}
             />
           </div>
         )}

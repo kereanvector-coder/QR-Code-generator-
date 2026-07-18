@@ -16,6 +16,11 @@ export interface QRStyle {
   eyeBorderColor?: string;
   eyePupilColor?: string;
   bodyColor?: string;
+  frameType?: 'none' | 'card' | 'bubble' | 'tag' | 'minimal';
+  frameText?: string;
+  frameColor?: string;
+  frameTextColor?: string;
+  pupilType?: 'square' | 'rounded' | 'circle' | 'star';
 }
 
 export interface Campaign {

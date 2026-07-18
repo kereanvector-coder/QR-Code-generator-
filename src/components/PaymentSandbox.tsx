@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Smartphone, ShieldCheck, Play, ArrowRight, Info, Copy, RefreshCw, Terminal, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { CreditPackage, Transaction } from '../types';
-import { processPaymentWebhook } from '../utils/paymentWebhooks';
+import { processPaymentWebhook, hmacSha } from '../utils/paymentWebhooks';
 
 interface PaymentSandboxProps {
   credits: number;
@@ -72,7 +72,7 @@ export default function PaymentSandbox({
     generateMockPayload();
   }, [gateway, selectedPack]);
 
-  const generateMockPayload = () => {
+  const generateMockPayload = async () => {
     const reference = `TX-${gateway.toUpperCase().substring(0, 3)}-${Math.floor(100000 + Math.random() * 900000)}`;
     let payloadObj: any = {};
 
@@ -144,18 +144,17 @@ export default function PaymentSandbox({
     const payloadStr = JSON.stringify(payloadObj, null, 2);
     setRawPayload(payloadStr);
 
-    // Calculate corresponding mock signature
+    // Calculate corresponding mock signature using browser Web Crypto
     let headerVal = '';
-    const crypto = require('crypto');
     if (gateway === 'paystack') {
-      headerVal = crypto.createHmac('sha512', keys.paystackSecret).update(payloadStr).digest('hex');
+      headerVal = await hmacSha('SHA-512', keys.paystackSecret, payloadStr);
     } else if (gateway === 'flutterwave') {
       headerVal = keys.flutterwaveHash;
     } else {
       // Stripe uses format: t=timestamp,v1=signature
       const timestamp = Math.floor(Date.now() / 1000).toString();
       const signedPayload = `${timestamp}.${payloadStr}`;
-      const sig = crypto.createHmac('sha256', keys.stripeSecret).update(signedPayload).digest('hex');
+      const sig = await hmacSha('SHA-256', keys.stripeSecret, signedPayload);
       headerVal = `t=${timestamp},v1=${sig}`;
     }
     setSignatureHeader(headerVal);
@@ -262,7 +261,7 @@ export default function PaymentSandbox({
           {/* PACKAGE SELECTOR TO LOAD VALUE */}
           <div className="space-y-2">
             <span className="text-[10px] uppercase font-bold text-slate-500">1. Select Simulated Package</span>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {[
                 { id: 'pack-freelancer', name: 'Freelancer', credits: 20, priceNGN: '₦4,500', priceKES: 'KSh 750', priceUSD: '$5.00', rawNGN: 4500, rawKES: 750, rawUSD: 5 },
                 { id: 'pack-sme', name: 'SME', credits: 100, priceNGN: '₦18,000', priceKES: 'KSh 3,000', priceUSD: '$20.00', rawNGN: 18000, rawKES: 3000, rawUSD: 20 },

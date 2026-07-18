@@ -1,5 +1,3 @@
-import crypto from 'crypto';
-
 // Note: In your production Express.js backend, use raw bodies for Stripe webhook signature verification.
 // Example: app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
 
@@ -16,22 +14,46 @@ interface WebhookResult {
 }
 
 /**
- * PRODUCTION-READY PAYSTACK WEBHOOK VERIFIER
+ * Browser-compatible HMAC generator using Web Crypto API.
+ */
+export async function hmacSha(algorithm: 'SHA-256' | 'SHA-512', keyStr: string, dataStr: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(keyStr);
+  const data = encoder.encode(dataStr);
+  
+  const cryptoKey = await window.crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: algorithm },
+    false,
+    ['sign']
+  );
+  
+  const signatureBuffer = await window.crypto.subtle.sign(
+    'HMAC',
+    cryptoKey,
+    data
+  );
+  
+  // Convert buffer to hex string
+  const hashArray = Array.from(new Uint8Array(signatureBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * PRODUCTION-READY PAYSTACK WEBHOOK VERIFIER (Browser-compatible)
  * Paystack signs payloads with an HMAC-SHA512 header using your API secret key.
  */
-export function verifyPaystackWebhook(
+export async function verifyPaystackWebhook(
   payload: string,
   signatureHeader: string | undefined,
   secretKey: string
-): { verified: boolean; error?: string } {
+): Promise<{ verified: boolean; error?: string }> {
   if (!signatureHeader) {
     return { verified: false, error: 'Missing x-paystack-signature header' };
   }
 
-  const hash = crypto
-    .createHmac('sha512', secretKey)
-    .update(payload)
-    .digest('hex');
+  const hash = await hmacSha('SHA-512', secretKey, payload);
 
   const verified = hash === signatureHeader;
   return {
@@ -60,14 +82,14 @@ export function verifyFlutterwaveWebhook(
 }
 
 /**
- * PRODUCTION-READY STRIPE WEBHOOK VERIFIER
+ * PRODUCTION-READY STRIPE WEBHOOK VERIFIER (Browser-compatible)
  * Stripe uses HMAC-SHA256 with a timestamp to prevent replay attacks.
  */
-export function verifyStripeWebhook(
+export async function verifyStripeWebhook(
   payload: string,
   signatureHeader: string | undefined,
   endpointSecret: string
-): { verified: boolean; error?: string } {
+): Promise<{ verified: boolean; error?: string }> {
   if (!signatureHeader) {
     return { verified: false, error: 'Missing stripe-signature header' };
   }
@@ -92,15 +114,9 @@ export function verifyStripeWebhook(
     }
 
     const signedPayload = `${timestamp}.${payload}`;
-    const expectedSignature = crypto
-      .createHmac('sha256', endpointSecret)
-      .update(signedPayload)
-      .digest('hex');
+    const expectedSignature = await hmacSha('SHA-256', endpointSecret, signedPayload);
 
-    const verified = crypto.timingSafeEqual(
-      Buffer.from(signature, 'hex'),
-      Buffer.from(expectedSignature, 'hex')
-    );
+    const verified = signature === expectedSignature;
 
     return {
       verified,
@@ -132,7 +148,7 @@ export async function processPaymentWebhook(params: {
   let verificationError: string | undefined;
 
   if (gateway === 'paystack') {
-    const res = verifyPaystackWebhook(payloadString, signatureHeader, secretKeys.paystackSecret);
+    const res = await verifyPaystackWebhook(payloadString, signatureHeader, secretKeys.paystackSecret);
     isVerified = res.verified;
     verificationError = res.error;
   } else if (gateway === 'flutterwave') {
@@ -140,7 +156,7 @@ export async function processPaymentWebhook(params: {
     isVerified = res.verified;
     verificationError = res.error;
   } else if (gateway === 'stripe') {
-    const res = verifyStripeWebhook(payloadString, signatureHeader, secretKeys.stripeSecret);
+    const res = await verifyStripeWebhook(payloadString, signatureHeader, secretKeys.stripeSecret);
     isVerified = res.verified;
     verificationError = res.error;
   }

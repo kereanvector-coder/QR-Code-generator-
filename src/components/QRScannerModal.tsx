@@ -322,7 +322,7 @@ export default function QRScannerModal({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 text-xs pt-1">
+                <div className="grid grid-cols-1 xs:grid-cols-2 gap-4 text-xs pt-1">
                   <div>
                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Decoded Format</span>
                     <span className="font-bold text-slate-300">{scannedResult.type}</span>

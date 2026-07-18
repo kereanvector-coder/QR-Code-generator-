@@ -416,7 +416,7 @@ export default function AuthPanel({
                 <p className="text-[10px] text-slate-500">
                   Choose your account clearance clearance level to test access control rules and secure panels instantly.
                 </p>
-                <div className="grid grid-cols-4 gap-1.5 pt-1">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1">
                   {(['Admin', 'Operator', 'Collaborator', 'Guest'] as UserRole[]).map((role) => (
                     <button
                       key={role}
